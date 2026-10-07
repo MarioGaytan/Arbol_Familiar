@@ -5,12 +5,13 @@ import {
   claimInvites, createSession, destroySession, DUMMY_HASH, hashPassword, newPublicToken, sha256, treeRole,
   userFromRequest, verifyPassword,
 } from './auth.js';
+import { CONSENT_EXEMPT, LEGAL_VERSION, needsConsent } from './privacy.js';
 
 const email = z.string().trim().toLowerCase().email('Correo inválido').max(200);
 const uuid = z.string().uuid();
 
 /** Rutas que no requieren sesión */
-const PUBLIC_PREFIXES = ['/api/health', '/api/auth/', '/api/public/'];
+const PUBLIC_PREFIXES = ['/api/health', '/api/auth/', '/api/public/', '/api/legal'];
 
 export async function registerAccountRoutes(app: FastifyInstance) {
   app.decorateRequest('user', null);
@@ -23,6 +24,10 @@ export async function registerAccountRoutes(app: FastifyInstance) {
     if (PUBLIC_PREFIXES.some((p) => req.url.startsWith(p))) return;
     if (!req.user) return reply.code(401).send({ error: 'Inicia sesión para continuar' });
     if (req.url.startsWith('/api/admin/') && !req.user.isAdmin) return reply.code(403).send({ error: 'Sólo para administradores' });
+    // Consentimiento informado: si cambió el Aviso de Privacidad, hay que aceptarlo antes de seguir
+    if (needsConsent(req.user.legalVersion) && !CONSENT_EXEMPT.some((p) => req.url.startsWith(p))) {
+      return reply.code(428).send({ error: 'Debes aceptar el Aviso de Privacidad vigente para continuar', consentRequired: true });
+    }
 
     // Toda ruta /api/trees/:treeId/... exige ser miembro del árbol
     const treeId = (req.params as { treeId?: string } | undefined)?.treeId;
@@ -71,6 +76,9 @@ export async function registerAccountRoutes(app: FastifyInstance) {
         email,
         password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(200),
         invite: z.string().min(16).max(80).optional(),
+        // Consentimiento expreso e informado (LFPDPPP): sin estas casillas no hay registro
+        acceptLegal: z.literal(true, { errorMap: () => ({ message: 'Debes aceptar el Aviso de Privacidad y los Términos y Condiciones' }) }),
+        adult: z.literal(true, { errorMap: () => ({ message: 'Debes confirmar que eres mayor de edad' }) }),
       })
       .parse(req.body);
     const passwordHash = await hashPassword(body.password);
@@ -100,11 +108,13 @@ export async function registerAccountRoutes(app: FastifyInstance) {
       const exists = await c.query('SELECT 1 FROM users WHERE email = $1', [body.email]);
       if (exists.rowCount) throw Object.assign(new Error('Ya existe una cuenta con ese correo'), { statusCode: 409 });
       const { rows } = await c.query(
-        `INSERT INTO users(name, email, password_hash, is_admin, last_login_at) VALUES ($1, $2, $3, $4, now())
-         RETURNING id, email, name, is_admin AS "isAdmin"`,
-        [body.name, body.email, passwordHash, first],
+        `INSERT INTO users(name, email, password_hash, is_admin, last_login_at, legal_version, legal_accepted_at, adult_confirmed_at)
+         VALUES ($1, $2, $3, $4, now(), $5, now(), now())
+         RETURNING id, email, name, is_admin AS "isAdmin", legal_version AS "legalVersion"`,
+        [body.name, body.email, passwordHash, first, LEGAL_VERSION],
       );
       const u = rows[0];
+      await c.query('INSERT INTO consent_log(user_id, version) VALUES ($1, $2)', [u.id, LEGAL_VERSION]);
       if (inviteId) await c.query('UPDATE registration_invites SET used_by = $1 WHERE id = $2', [u.id, inviteId]);
       await claimInvites(c, u.id, body.email);
       if (first) {
@@ -125,7 +135,7 @@ export async function registerAccountRoutes(app: FastifyInstance) {
   app.post('/api/auth/login', authLimit, async (req, reply) => {
     const body = z.object({ email, password: z.string().max(200) }).parse(req.body);
     const { rows } = await pool.query(
-      'SELECT id, email, name, password_hash, is_admin AS "isAdmin", status FROM users WHERE email = $1',
+      'SELECT id, email, name, password_hash, is_admin AS "isAdmin", status, legal_version AS "legalVersion" FROM users WHERE email = $1',
       [body.email],
     );
     const u = rows[0];
@@ -135,7 +145,7 @@ export async function registerAccountRoutes(app: FastifyInstance) {
     if (u.status !== 'active') return reply.code(403).send({ error: 'Tu cuenta está desactivada. Contacta al administrador.' });
     await pool.query('UPDATE users SET last_login_at = now() WHERE id = $1', [u.id]);
     await createSession(reply, u.id);
-    return { user: { id: u.id, email: u.email, name: u.name, isAdmin: u.isAdmin } };
+    return { user: { id: u.id, email: u.email, name: u.name, isAdmin: u.isAdmin }, consentRequired: needsConsent(u.legalVersion) };
   });
 
   app.post('/api/auth/logout', async (req, reply) => {
@@ -145,7 +155,8 @@ export async function registerAccountRoutes(app: FastifyInstance) {
 
   app.get('/api/auth/me', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'Sin sesión' });
-    return { user: req.user };
+    const { legalVersion, ...user } = req.user;
+    return { user, consentRequired: needsConsent(legalVersion), legalVersion: LEGAL_VERSION };
   });
 
   // ---------- Compartir (sólo el dueño) ----------
@@ -159,9 +170,14 @@ export async function registerAccountRoutes(app: FastifyInstance) {
         [treeId],
       ),
       pool.query('SELECT email, role FROM tree_invites WHERE tree_id = $1 ORDER BY created_at', [treeId]),
-      pool.query('SELECT public_token AS "publicToken" FROM trees WHERE id = $1', [treeId]),
+      pool.query('SELECT public_token AS "publicToken", public_hide_living AS "publicHideLiving" FROM trees WHERE id = $1', [treeId]),
     ]);
-    return { members: members.rows, invites: invites.rows, publicToken: tree.rows[0]?.publicToken ?? null };
+    return {
+      members: members.rows,
+      invites: invites.rows,
+      publicToken: tree.rows[0]?.publicToken ?? null,
+      publicHideLiving: tree.rows[0]?.publicHideLiving ?? true,
+    };
   }
 
   app.get('/api/trees/:treeId/sharing', owner, async (req) => sharing((req.params as { treeId: string }).treeId));
@@ -206,8 +222,9 @@ export async function registerAccountRoutes(app: FastifyInstance) {
   /** Activar / desactivar / regenerar el enlace público de sólo lectura. */
   app.post('/api/trees/:treeId/public-link', owner, async (req) => {
     const { treeId } = req.params as { treeId: string };
-    const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
-    await pool.query('UPDATE trees SET public_token = $2 WHERE id = $1', [treeId, enabled ? newPublicToken() : null]);
+    const { enabled, hideLiving } = z.object({ enabled: z.boolean().optional(), hideLiving: z.boolean().optional() }).parse(req.body);
+    if (enabled !== undefined) await pool.query('UPDATE trees SET public_token = $2 WHERE id = $1', [treeId, enabled ? newPublicToken() : null]);
+    if (hideLiving !== undefined) await pool.query('UPDATE trees SET public_hide_living = $2 WHERE id = $1', [treeId, hideLiving]);
     return sharing(treeId);
   });
 }

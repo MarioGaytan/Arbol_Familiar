@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Lock, MailCheck, ShieldCheck, TreePine } from 'lucide-react';
+import { LegalFooter } from './LegalPage';
 import { api } from '../api';
 import { useEditor } from '../store';
 
@@ -18,6 +19,8 @@ export function AuthScreen({ inviteToken, onRegistered }: { inviteToken: string 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [acceptLegal, setAcceptLegal] = useState(false);
+  const [adult, setAdult] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -43,7 +46,7 @@ export function AuthScreen({ inviteToken, onRegistered }: { inviteToken: string 
       const { user } =
         mode === 'login'
           ? await api.login(email, password)
-          : await api.register(name, email, password, mode === 'register' ? inviteToken ?? undefined : undefined);
+          : await api.register(name, email, password, mode === 'register' ? inviteToken ?? undefined : undefined, acceptLegal, adult);
       setStore({ user });
       if (mode !== 'login') onRegistered();
     } catch (err) {
@@ -115,8 +118,27 @@ export function AuthScreen({ inviteToken, onRegistered }: { inviteToken: string 
             />
             {registering && <em className="hint">Mínimo 8 caracteres</em>}
           </label>
+          {registering && (
+            <div className="consent-box">
+              <label className="consent">
+                <input type="checkbox" checked={acceptLegal} onChange={(e) => setAcceptLegal(e.target.checked)} required />
+                <span>
+                  He leído y acepto el <a href="?legal=privacidad" target="_blank" rel="noopener">Aviso de Privacidad</a> y los{' '}
+                  <a href="?legal=terminos" target="_blank" rel="noopener">Términos y Condiciones</a>, y consiento el tratamiento de
+                  mis datos para las finalidades ahí descritas.
+                </span>
+              </label>
+              <label className="consent">
+                <input type="checkbox" checked={adult} onChange={(e) => setAdult(e.target.checked)} required />
+                <span>
+                  Soy mayor de edad y sólo registraré datos de otras personas con su consentimiento (o el de su madre, padre o
+                  tutor, si son menores).
+                </span>
+              </label>
+            </div>
+          )}
           {error && <p className="auth-error">{error}</p>}
-          <button className="btn primary lg block" disabled={busy}>
+          <button className="btn primary lg block" disabled={busy || (registering && (!acceptLegal || !adult))}>
             {busy ? 'Un momento…' : mode === 'login' ? 'Entrar' : mode === 'setup' ? 'Crear cuenta de administrador' : 'Crear mi cuenta'}
           </button>
         </form>
@@ -124,6 +146,7 @@ export function AuthScreen({ inviteToken, onRegistered }: { inviteToken: string 
           <Lock size={13} /> {mode === 'login' ? 'El registro es sólo por invitación.' : 'Tus árboles sólo los ven las personas que tú invites.'}
         </p>
       </div>
+      <LegalFooter />
     </div>
   );
 }

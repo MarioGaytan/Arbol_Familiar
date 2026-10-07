@@ -16,6 +16,8 @@ export interface SessionUser {
   email: string;
   name: string;
   isAdmin: boolean;
+  /** Versión del Aviso de Privacidad aceptada (null = nunca) */
+  legalVersion: string | null;
 }
 
 declare module 'fastify' {
@@ -72,7 +74,7 @@ export async function userFromRequest(req: FastifyRequest): Promise<SessionUser 
   const token = req.cookies[SESSION_COOKIE];
   if (!token) return null;
   const { rows } = await pool.query<SessionUser>(
-    `SELECT u.id, u.email, u.name, u.is_admin AS "isAdmin" FROM sessions s JOIN users u ON u.id = s.user_id
+    `SELECT u.id, u.email, u.name, u.is_admin AS "isAdmin", u.legal_version AS "legalVersion" FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status = 'active'`,
     [sha256(token)],
   );

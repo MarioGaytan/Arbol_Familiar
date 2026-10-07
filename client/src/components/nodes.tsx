@@ -129,10 +129,10 @@ export const DecorNode = memo(function DecorNode({ data }: NodeProps<DecorFlowNo
     );
   }
   const anchors = data.anchors!;
-  const bx = anchors.reduce((s, a) => s + a.x, 0) / anchors.length;
-  const baseY = h - 34;
-  const forkY = Math.max(NODE_H / 2 + 60, h * 0.5);
-  const wb = Math.min(96, 46 + anchors.length * 12);
+  const bx = data.trunk?.x ?? anchors.reduce((s, a) => s + a.x, 0) / anchors.length;
+  const baseY = data.trunk?.baseY ?? h - 34;
+  const forkY = data.trunk?.forkY ?? Math.max(NODE_H / 2 + 60, h * 0.5);
+  const wb = Math.min(110, 46 + anchors.length * 10);
   const trunk = verticalCurve({ x: bx, y: baseY }, { x: bx, y: forkY });
   const roots = [-1, 1].flatMap((side) =>
     [0.55, 1].map((k) => verticalCurve({ x: bx + side * wb * 0.2, y: baseY - 18 }, { x: bx + side * (70 + 90 * k), y: h - 4 })),
@@ -142,9 +142,11 @@ export const DecorNode = memo(function DecorNode({ data }: NodeProps<DecorFlowNo
       <ellipse cx={bx} cy={h - 8} rx={wb * 2.6} ry={10} className="ground" />
       {roots.map((r, i) => <path key={`r${i}`} d={taper(r, wb * 0.42, 2)} className="trunk" />)}
       <path d={taper(trunk, wb, wb * 0.72)} className="trunk" />
-      {anchors.map((a, i) => (
-        <path key={i} d={taper(verticalCurve({ x: bx, y: forkY + 6 }, { x: a.x, y: a.y }), (wb * 0.72) / Math.sqrt(anchors.length), a.w)} className="trunk" />
-      ))}
+      {anchors.map((a, i) => {
+        const spread = Math.max(-1, Math.min(1, (a.x - bx) / 600));
+        const start = { x: bx + spread * wb * 0.25, y: forkY + 8 };
+        return <path key={i} d={taper(verticalCurve(start, { x: a.x, y: a.y }), Math.max(10, (wb * 0.75) / Math.sqrt(anchors.length)), Math.max(4, a.w))} className="trunk" />;
+      })}
     </svg>
   );
 });

@@ -16,8 +16,17 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const data = await res.json().catch(() => ({}));
   // Sesión vencida o cerrada en otro lado: la app vuelve a la pantalla de acceso
   if (res.status === 401 && !url.startsWith('/api/auth/')) window.dispatchEvent(new Event('auth:expired'));
+  // Cambió el Aviso de Privacidad: hay que volver a aceptarlo
+  if (res.status === 428) window.dispatchEvent(new Event('consent:required'));
   if (!res.ok) throw new Error(data.error ?? `Error ${res.status}`);
   return data as T;
+}
+
+export interface LegalConfig {
+  version: string;
+  controller: { name: string | null; address: string | null; email: string | null };
+  siteUrl: string | null;
+  configured: boolean;
 }
 
 export type PersonInput = Partial<Omit<Person, 'id' | 'treeId'>>;
@@ -30,9 +39,25 @@ export interface Snapshot {
 }
 
 export const api = {
-  me: () => req<{ user: User }>('GET', '/api/auth/me'),
-  register: (name: string, email: string, password: string, invite?: string) =>
-    req<{ user: User }>('POST', '/api/auth/register', { name, email, password, invite }),
+  me: () => req<{ user: User; consentRequired: boolean }>('GET', '/api/auth/me'),
+  legal: () => req<LegalConfig>('GET', '/api/legal'),
+  acceptLegal: () => req('POST', '/api/me/consent', { accept: true }),
+  updateMe: (name: string) => req<{ user: User }>('PATCH', '/api/me', { name }),
+  changePassword: (current: string, next: string) => req('POST', '/api/me/password', { current, next }),
+  deleteMe: (password: string) => req<{ ok: true; deletedTrees: number }>('POST', '/api/me/delete', { password }),
+  /** Descarga el JSON con todos los datos personales de la cuenta (derecho de acceso) */
+  exportMe: async () => {
+    const res = await fetch('/api/me/export', { headers: { 'X-Client-Id': CLIENT_ID } });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'No se pudo exportar');
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'mis-datos-raices.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  },
+  register: (name: string, email: string, password: string, invite: string | undefined, acceptLegal: boolean, adult: boolean) =>
+    req<{ user: User }>('POST', '/api/auth/register', { name, email, password, invite, acceptLegal, adult }),
   setupStatus: () => req<{ needsSetup: boolean }>('GET', '/api/auth/setup'),
   checkInvite: (token: string) =>
     req<{ email: string | null; expiresAt: string }>('GET', `/api/auth/invite/${encodeURIComponent(token)}`),
@@ -54,7 +79,7 @@ export const api = {
     update: (id: string, patch: { name?: string; theme?: TreeSettings }) => req<UserTheme>('PATCH', `/api/me/themes/${id}`, patch),
     remove: (id: string) => req('DELETE', `/api/me/themes/${id}`),
   },
-  login: (email: string, password: string) => req<{ user: User }>('POST', '/api/auth/login', { email, password }),
+  login: (email: string, password: string) => req<{ user: User; consentRequired: boolean }>('POST', '/api/auth/login', { email, password }),
   logout: () => req('POST', '/api/auth/logout'),
 
   getSharing: (treeId: string) => req<SharingInfo>('GET', `/api/trees/${treeId}/sharing`),
@@ -62,8 +87,8 @@ export const api = {
   removeMember: (treeId: string, userId: string) => req<SharingInfo>('DELETE', `/api/trees/${treeId}/members/${userId}`),
   removeInvite: (treeId: string, email: string) =>
     req<SharingInfo>('DELETE', `/api/trees/${treeId}/invites?email=${encodeURIComponent(email)}`),
-  setPublicLink: (treeId: string, enabled: boolean) =>
-    req<SharingInfo>('POST', `/api/trees/${treeId}/public-link`, { enabled }),
+  setPublicLink: (treeId: string, opts: { enabled?: boolean; hideLiving?: boolean }) =>
+    req<SharingInfo>('POST', `/api/trees/${treeId}/public-link`, opts),
   getPublicTree: (token: string) => req<TreeData>('GET', `/api/public/${encodeURIComponent(token)}`),
 
   listTrees: () => req<Tree[]>('GET', '/api/trees'),

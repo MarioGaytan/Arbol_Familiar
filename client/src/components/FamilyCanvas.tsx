@@ -78,17 +78,49 @@ export function FamilyCanvas() {
   // Nodos locales (para arrastrar fluido); el store es la fuente de verdad y se sincroniza al soltar
   const [nodes, setNodes] = useState<FlowNode[]>([]);
   const lastSelected = useRef<string | null>(null);
+  const shownRef = useRef<FlowNode[]>([]);
+  shownRef.current = nodes;
+  const tween = useRef<number>(0);
   useEffect(() => {
     const selChanged = lastSelected.current !== s.selectedId;
     lastSelected.current = s.selectedId;
-    setNodes((prev) => {
-      const prevMap = new Map(prev.map((n) => [n.id, n]));
-      return built.nodes.map((n) => {
-        const p = prevMap.get(n.id);
-        const selected = selChanged || !p ? n.id === s.selectedId : !!p.selected;
-        return { ...n, measured: p?.measured, selected } as FlowNode;
-      });
+    const prev = shownRef.current;
+    const prevMap = new Map(prev.map((n) => [n.id, n]));
+    const next = built.nodes.map((n) => {
+      const p = prevMap.get(n.id);
+      const selected = selChanged || !p ? n.id === s.selectedId : !!p.selected;
+      return { ...n, measured: p?.measured, selected } as FlowNode;
     });
+
+    // Al reordenar, las tarjetas se deslizan a su nuevo lugar (y las líneas las siguen cuadro a cuadro)
+    cancelAnimationFrame(tween.current);
+    const from = new Map(prev.filter((n) => n.type === 'person').map((n) => [n.id, n.position]));
+    const moving = useEditor.getState().animateUntil > Date.now() && next.some((n) => {
+      const a = from.get(n.id);
+      return a && (a.x !== n.position.x || a.y !== n.position.y);
+    });
+    if (!moving) {
+      setNodes(next);
+      return;
+    }
+    const target = new Map(next.map((n) => [n.id, n.position]));
+    const t0 = performance.now();
+    const frame = (t: number) => {
+      const k = Math.min(1, (t - t0) / 480);
+      const e = 1 - Math.pow(1 - k, 3);
+      setNodes(
+        placeUnions(
+          next.map((n) => {
+            const a = from.get(n.id);
+            const b = target.get(n.id)!;
+            return a && n.type === 'person' ? { ...n, position: { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e } } : n;
+          }),
+        ),
+      );
+      if (k < 1) tween.current = requestAnimationFrame(frame);
+    };
+    tween.current = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(tween.current);
   }, [built, s.selectedId]);
 
   const onNodesChange = useCallback((changes: NodeChange<FlowNode>[]) => {

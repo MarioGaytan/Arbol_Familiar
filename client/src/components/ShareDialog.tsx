@@ -12,6 +12,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState('');
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
 
   const run = async (fn: () => Promise<SharingInfo>, ok?: string) => {
     setBusy(true);
@@ -109,18 +110,41 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
                   <button className="btn" onClick={copy}>{copied ? <Check size={15} /> : <Copy size={15} />} {copied ? 'Copiado' : 'Copiar'}</button>
                 </div>
                 <div className="link-actions">
-                  <button className="btn sm" disabled={busy} onClick={() => run(() => api.setPublicLink(tree.id, true), 'Enlace nuevo: el anterior ya no funciona')}>
+                  <button className="btn sm" disabled={busy} onClick={() => run(() => api.setPublicLink(tree.id, { enabled: true }), 'Enlace nuevo: el anterior ya no funciona')}>
                     <RefreshCw size={14} /> Generar otro enlace
                   </button>
-                  <button className="btn sm danger" disabled={busy} onClick={() => run(() => api.setPublicLink(tree.id, false), 'Enlace público desactivado')}>
+                  <button className="btn sm danger" disabled={busy} onClick={() => run(() => api.setPublicLink(tree.id, { enabled: false }), 'Enlace público desactivado')}>
                     <Link2Off size={14} /> Desactivar
                   </button>
                 </div>
               </>
             ) : (
-              <button className="btn" disabled={busy || !info} onClick={() => run(() => api.setPublicLink(tree.id, true))}>
-                <Globe size={15} /> Crear enlace público
-              </button>
+              <>
+                <label className="consent">
+                  <input type="checkbox" checked={authorized} onChange={(e) => setAuthorized(e.target.checked)} />
+                  <span>
+                    Confirmo que cuento con autorización de las personas vivas que aparecen en el árbol (o de su madre, padre o
+                    tutor, si son menores) para compartir esta información.
+                  </span>
+                </label>
+                <button className="btn" disabled={busy || !info || !authorized} onClick={() => run(() => api.setPublicLink(tree.id, { enabled: true }))}>
+                  <Globe size={15} /> Crear enlace público
+                </button>
+              </>
+            )}
+            {info && (
+              <label className="switch-row living-toggle">
+                <span>
+                  Proteger a las personas vivas
+                  <small className="switch-help">En el enlace público se ocultan sus fotos, fechas y lugares; sólo se muestra el nombre. Recomendado, sobre todo si hay menores.</small>
+                </span>
+                <input
+                  type="checkbox"
+                  className="switch"
+                  checked={info.publicHideLiving}
+                  onChange={(e) => run(() => api.setPublicLink(tree.id, { hideLiving: e.target.checked }))}
+                />
+              </label>
             )}
           </section>
         </div>

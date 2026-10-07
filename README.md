@@ -44,6 +44,7 @@ Aplicación web para crear, organizar, compartir e imprimir árboles familiares 
 - [Decisiones técnicas destacadas](#decisiones-técnicas-destacadas)
 - [Modelo de datos e integridad](#modelo-de-datos-e-integridad)
 - [Seguridad y privacidad](#seguridad-y-privacidad)
+- [Protección de datos personales (México)](#protección-de-datos-personales-méxico)
 - [Ejecutar en local](#ejecutar-en-local)
 - [Despliegue en producción](#despliegue-en-producción)
 - [Estructura del proyecto](#estructura-del-proyecto)
@@ -73,7 +74,10 @@ Tres formas de presentar el árbol, todas generadas automáticamente y luego aju
 
 | Generaciones | Árbol | Radial |
 |---|---|---|
-| Clásico de arriba hacia abajo: parejas juntas, hijos centrados bajo sus padres y líneas en "T". | Los ancestros sobre un **tronco con raíces** y los descendientes creciendo hacia arriba en **ramas que se afinan** generación tras generación. | Abanico de anillos concéntricos, desde los ancestros hacia las generaciones más recientes. |
+| Clásico de arriba hacia abajo: parejas juntas, hijos centrados bajo sus padres y líneas en "T". | Los ancestros sobre un **tronco con raíces** que se ramifica hacia el origen de cada linaje, y los descendientes creciendo hacia arriba en **ramas que se afinan**. | Medallones en anillos concéntricos, desde los ancestros hacia las generaciones más recientes (ideal para familias pequeñas). |
+
+- **Orden automático**: al agregar o quitar personas o vínculos el árbol se reacomoda solo y las tarjetas **se deslizan** a su nuevo lugar; se puede desactivar para conservar acomodos manuales.
+- Probado con árboles de 5 generaciones, varios linajes que se unen por matrimonio y familias numerosas.
 
 ### Diseño
 - Seis estilos prediseñados (Clásico, Moderno, Bosque, Pergamino, Noche y Pastel).
@@ -204,7 +208,28 @@ Las migraciones SQL se versionan en `server/migrations/` y se aplican automátic
   - tokens aleatorios de 144 bits, revocables;
   - excluyen las notas privadas.
 - **Fotos:** se guardan con nombres aleatorios (UUID), que no se pueden listar ni adivinar.
+- **HTTPS obligatorio** en producción (redirección 301) y cabeceras de seguridad: `Strict-Transport-Security`, `Content-Security-Policy` estricta (sólo recursos propios y el dominio de las fotos), `X-Frame-Options: DENY`, `X-Content-Type-Options`, `Referrer-Policy` y `Permissions-Policy`.
 - Los secretos se gestionan únicamente mediante variables de entorno (`.env` está excluido del repositorio).
+
+## Protección de datos personales (México)
+
+La aplicación incorpora los elementos que exige la **Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP)**:
+
+| Requisito | Implementación |
+|---|---|
+| Aviso de Privacidad integral | Página `?legal=privacidad`: identidad y domicilio del responsable, datos tratados, finalidades (sólo primarias, sin mercadotecnia), datos sensibles, transferencias y remisiones, medios ARCO y plazos, revocación, cookies, medidas de seguridad, conservación, cambios y autoridad. |
+| Consentimiento expreso e informado | El registro exige dos casillas: aceptación del Aviso y los Términos, y confirmación de mayoría de edad y de contar con autorización para registrar datos de terceros. Se guarda la versión aceptada y la fecha (`consent_log`). |
+| Cambios al aviso | Al cambiar `LEGAL_VERSION`, cada usuario debe aceptar la nueva versión antes de seguir usando la app (el servidor responde `428` hasta entonces). |
+| Derechos ARCO | En **Mi cuenta**: descarga de todos los datos en JSON (acceso y portabilidad), corrección de nombre y contraseña (rectificación) y eliminación de la cuenta con sus árboles (cancelación y revocación). Oposición y demás solicitudes por el correo de privacidad. |
+| Datos de terceros y menores | Registro sólo para mayores de edad; el usuario declara contar con autorización para registrar a otras personas. En los enlaces públicos se ocultan por defecto fotos, fechas y lugares de **personas vivas**, y crear el enlace requiere confirmar dicha autorización. |
+| Datos sensibles | No se solicitan; las notas advierten no registrarlos sin consentimiento expreso. |
+| Cookies | Sólo una cookie esencial de sesión y almacenamiento local de preferencias; aviso informativo y Política de Cookies (`?legal=cookies`). Sin analítica ni rastreadores. |
+| Términos y Condiciones | Página `?legal=terminos`. |
+| Medidas de seguridad | Ver [Seguridad y privacidad](#seguridad-y-privacidad). |
+
+Los datos del responsable se configuran con `LEGAL_CONTROLLER_NAME`, `LEGAL_CONTROLLER_ADDRESS` y `LEGAL_CONTACT_EMAIL`; mientras falten, el aviso los muestra resaltados y el panel de administración lo advierte.
+
+> **Importante:** estos textos son una base técnica sólida, no asesoría legal. Antes de abrir el servicio al público conviene que un abogado especialista en protección de datos los revise y adapte a tu caso.
 
 ## Ejecutar en local
 
@@ -265,8 +290,11 @@ La configuración propuesta prioriza el **bajo coste**:
    R2_SECRET_ACCESS_KEY=…
    R2_BUCKET=…
    R2_PUBLIC_URL=https://fotos.tudominio.com
+   LEGAL_CONTROLLER_NAME=Tu nombre o razón social
+   LEGAL_CONTROLLER_ADDRESS=Domicilio completo en México
+   LEGAL_CONTACT_EMAIL=privacidad@tudominio.com
    ```
-4. Asocia el dominio personalizado (registro CNAME en Cloudflare).
+4. Asocia el dominio personalizado (registro CNAME en Cloudflare). El HTTPS lo proveen Railway y Cloudflare; la app redirige automáticamente cualquier acceso por HTTP.
 5. Activa las copias de seguridad de PostgreSQL.
 
 Al arrancar, el servidor aplica las migraciones y verifica el acceso a R2. Si la configuración está incompleta, se detiene con un mensaje claro en lugar de fallar más tarde.
@@ -280,6 +308,9 @@ Al arrancar, el servidor aplica las migraciones y verifica el acceso a R2. Si la
 | `DATABASE_SSL` | No | `true` si el proveedor exige SSL |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL` | En producción | Almacenamiento de fotos en Cloudflare R2 |
 | `PHOTO_GRACE_DAYS` | No | Días que se conserva una foto sin uso antes de borrarla (por defecto `7`) |
+| `LEGAL_CONTROLLER_NAME`, `LEGAL_CONTROLLER_ADDRESS`, `LEGAL_CONTACT_EMAIL` | En producción | Responsable del tratamiento de datos que aparece en el Aviso de Privacidad |
+| `PUBLIC_SITE_URL` | No | URL pública del sitio |
+| `FORCE_HTTPS` | No | `false` sólo para probar la imagen de producción en local sin certificado |
 
 ## Estructura del proyecto
 
@@ -313,7 +344,6 @@ Al arrancar, el servidor aplica las migraciones y verifica el acceso a R2. Si la
 ## Hoja de ruta
 
 - Recuperación de contraseña y verificación de correo.
-- Opción de ocultar los datos de personas vivas en el enlace público.
 - Historial de deshacer persistente entre sesiones.
 - Vistas filtradas ("ancestros de…" / "descendientes de…") para árboles muy grandes.
 - Pruebas automatizadas y CI.

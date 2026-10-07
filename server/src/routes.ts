@@ -168,12 +168,15 @@ export async function registerRoutes(app: FastifyInstance) {
   /** Vista pública de sólo lectura: sin sesión, por token. Las notas privadas no se incluyen. */
   app.get('/api/public/:token', async (req) => {
     const { token } = z.object({ token: z.string().min(10).max(64) }).parse(req.params);
-    const { rows } = await pool.query('SELECT id FROM trees WHERE public_token = $1', [token]);
+    const { rows } = await pool.query('SELECT id, public_hide_living AS "hideLiving" FROM trees WHERE public_token = $1', [token]);
     if (!rows[0]) throw notFound('Enlace');
     const data = (await loadTree(rows[0].id))!;
+    // Privacidad de personas vivas (y por lo tanto de menores): sin foto, fechas ni lugar en el enlace público
+    const protect = (p: Record<string, unknown>) =>
+      rows[0].hideLiving && !p.deathDate ? { ...p, photoUrl: null, birthDate: null, birthPlace: null, livingHidden: true } : p;
     return {
       tree: { ...data.tree, role: 'viewer' },
-      persons: data.persons.map((p: Record<string, unknown>) => ({ ...p, notes: null })),
+      persons: data.persons.map((p: Record<string, unknown>) => protect({ ...p, notes: null })),
       parentChild: data.parentChild,
       partnerships: data.partnerships,
     };

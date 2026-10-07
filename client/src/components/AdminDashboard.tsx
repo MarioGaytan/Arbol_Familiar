@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, Ban, Check, Copy, Link2, ShieldCheck, ShieldOff, UserCheck, Users, X } from 'lucide-react';
-import { api } from '../api';
+import { api, type LegalConfig } from '../api';
 import { useEditor } from '../store';
 import type { AdminStats, AdminUser, RegistrationInvite } from '../types';
 
@@ -41,6 +41,10 @@ export function AdminDashboard({ onBack }: { onBack: () => void }) {
   const [created, setCreated] = useState<{ link: string; email: string | null; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [filter, setFilter] = useState('');
+  const [legal, setLegal] = useState<LegalConfig | null>(null);
+  useEffect(() => {
+    api.legal().then(setLegal).catch(() => undefined);
+  }, []);
 
   const refresh = useCallback(() => {
     api.admin.stats().then(setStats).catch((e) => toast(e.message, 'error'));
@@ -96,6 +100,16 @@ export function AdminDashboard({ onBack }: { onBack: () => void }) {
         </div>
       </header>
 
+      {legal && !legal.configured && (
+        <div className="legal-warning card">
+          <strong>Completa los datos del responsable para el Aviso de Privacidad</strong>
+          <span>
+            La LFPDPPP exige identificar al responsable y su domicilio. Define <code>LEGAL_CONTROLLER_NAME</code>,{' '}
+            <code>LEGAL_CONTROLLER_ADDRESS</code> y <code>LEGAL_CONTACT_EMAIL</code> en las variables de entorno.{' '}
+            <a href="?legal=privacidad">Ver el aviso</a>
+          </span>
+        </div>
+      )}
       {stats && (
         <section className="stat-grid">
           <div className="stat card"><span>Usuarios</span><strong>{stats.users}</strong>{stats.blocked > 0 && <small>{stats.blocked} bloqueado(s)</small>}</div>

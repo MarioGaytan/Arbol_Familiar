@@ -10,7 +10,7 @@ import { Section } from './Section';
 const LAYOUT_MODES: [LayoutMode, string, string][] = [
   ['generations', 'Generaciones', 'De arriba hacia abajo'],
   ['tree', 'Árbol', 'Crece hacia arriba desde un tronco'],
-  ['radial', 'Radial', 'Anillos desde el centro'],
+  ['radial', 'Radial', 'Anillos · ideal para familias pequeñas'],
 ];
 
 function ModeIcon({ mode }: { mode: LayoutMode }) {
@@ -181,6 +181,13 @@ export function ThemePanel() {
               </button>
             ))}
           </div>
+          <label className="switch-row">
+            <span>
+              Ordenar automáticamente
+              <small className="switch-help">Al agregar o quitar personas el árbol se reacomoda solo. Desactívalo para conservar tus acomodos manuales.</small>
+            </span>
+            <input type="checkbox" className="switch" checked={settings.autoArrange !== false} onChange={(e) => updateTheme({ autoArrange: e.target.checked })} />
+          </label>
         </Section>
 
         <Section id="estilos" icon={<Sparkles size={15} />} title="Estilos">

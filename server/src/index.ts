@@ -8,6 +8,7 @@ import multipart from '@fastify/multipart';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
+import helmet from '@fastify/helmet';
 import { ZodError } from 'zod';
 import { migrate } from './migrate.js';
 import { pool } from './db.js';
@@ -15,6 +16,7 @@ import { registerRoutes } from './routes.js';
 import { registerAccountRoutes } from './accountRoutes.js';
 import { registerRealtime } from './realtime.js';
 import { registerAdminRoutes } from './adminRoutes.js';
+import { registerPrivacyRoutes } from './privacy.js';
 import { checkR2, LOCAL_UPLOAD_DIR, purgeOrphanPhotos, usingR2 } from './storage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +37,48 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
 
 // trustProxy: detrás del proxy de Railway, para ver la IP real (límite de intentos de login)
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' }, bodyLimit: 2 * 1024 * 1024, trustProxy: true });
+
+const PROD = process.env.NODE_ENV === 'production';
+
+// HTTPS obligatorio en producción: Railway termina el TLS y avisa el protocolo original en X-Forwarded-Proto
+// (FORCE_HTTPS=false sólo para probar la imagen de producción en local, sin certificado)
+if (PROD && process.env.FORCE_HTTPS !== 'false') {
+  app.addHook('onRequest', async (req, reply) => {
+    if (req.protocol === 'http' && req.url !== '/api/health') {
+      return reply.code(301).redirect(`https://${req.hostname}${req.url}`);
+    }
+  });
+}
+
+// Cabeceras de seguridad: HSTS, CSP, anti-clickjacking, sin sniffing de tipos, política de referer
+const photoOrigin = process.env.R2_PUBLIC_URL ? new URL(process.env.R2_PUBLIC_URL).origin : null;
+await app.register(helmet, {
+  contentSecurityPolicy: PROD
+    ? {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"], // estilos en línea de React Flow y del lienzo
+          imgSrc: ["'self'", 'data:', 'blob:', ...(photoOrigin ? [photoOrigin] : [])],
+          connectSrc: ["'self'", ...(photoOrigin ? [photoOrigin] : [])], // la exportación descarga las fotos
+          fontSrc: ["'self'", 'data:'],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          upgradeInsecureRequests: [],
+        },
+      }
+    : false, // en desarrollo Vite inyecta scripts en línea
+  hsts: PROD ? { maxAge: 31536000, includeSubDomains: true } : false,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  frameguard: { action: 'deny' },
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: 'same-site' },
+});
+app.addHook('onSend', async (_req, reply) => {
+  reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+});
 
 // La app y la API se sirven desde el mismo origen; CORS sólo para desarrollo
 if (process.env.NODE_ENV !== 'production') await app.register(cors, { origin: true, credentials: true });
@@ -72,6 +116,7 @@ app.setErrorHandler((err: FastifyError & { constraint?: string }, req, reply) =>
 await registerAccountRoutes(app);
 await registerRealtime(app);
 await registerAdminRoutes(app);
+await registerPrivacyRoutes(app);
 await registerRoutes(app);
 
 // Frontend compilado (producción): un solo servicio sirve API + app

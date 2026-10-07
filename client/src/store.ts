@@ -15,6 +15,8 @@ interface Command {
   redo: () => Promise<void>;
   /** Cambios rápidos repetidos (p. ej. arrastrar un selector de color) se funden en un solo paso */
   mergeKey?: string;
+  /** Cambia la estructura (personas o vínculos): al hacerlo/deshacerlo se reordena el árbol */
+  structural?: boolean;
   at: number;
 }
 
@@ -41,6 +43,8 @@ interface EditorState {
   future: Command[];
   /** Otras personas con este árbol abierto ahora mismo */
   presence: { id: string; name: string }[];
+  /** Hasta cuándo animar el movimiento de tarjetas (al reordenar) */
+  animateUntil: number;
   /** Mientras se arrastra no se aplican cambios remotos (evita que la tarjeta "salte") */
   dragging: boolean;
   busy: boolean;
@@ -223,6 +227,24 @@ export const useEditor = create<EditorState>((set, get) => {
     }, 400);
   };
 
+  /**
+   * Reordena todo el árbol tras agregar o quitar personas/vínculos, salvo que el usuario lo haya desactivado
+   * (en ese caso se respetan sus acomodos manuales). No se registra en el historial: forma parte del cambio.
+   */
+  const autoArrange = async () => {
+    const s = get();
+    if (!s.tree || s.readOnly || s.tree.theme.autoArrange === false) return;
+    const pos = layoutFor(s.tree.theme.layoutMode ?? 'generations', Object.values(s.persons), s.parentChild, s.partnerships);
+    const items = [...pos].map(([id, p]) => ({ id, ...p }));
+    const changed = items.filter((i) => {
+      const p = s.persons[i.id];
+      return p && (p.posX !== i.x || p.posY !== i.y);
+    });
+    if (!changed.length) return;
+    set({ animateUntil: Date.now() + 700 });
+    await R.positions(changed);
+  };
+
   const positionsOf = (ids: string[]) =>
     ids.map((id) => get().persons[id]).filter(Boolean).map((p) => ({ id: p.id, x: p.posX ?? 0, y: p.posY ?? 0 }));
 
@@ -260,6 +282,7 @@ export const useEditor = create<EditorState>((set, get) => {
     past: [],
     future: [],
     presence: [],
+    animateUntil: 0,
     dragging: false,
     busy: false,
     selectedId: null,
@@ -350,6 +373,7 @@ export const useEditor = create<EditorState>((set, get) => {
       set({ busy: true });
       try {
         await cmd.undo();
+        if (cmd.structural) await autoArrange().catch(toastError);
         // los avisos con botón "Deshacer" ya no aplican
         set((s) => ({ past: s.past.slice(0, -1), future: [...s.future, cmd], toasts: s.toasts.filter((t) => !t.action) }));
         get().toast(`Deshecho: ${cmd.label}`);
@@ -366,6 +390,7 @@ export const useEditor = create<EditorState>((set, get) => {
       set({ busy: true });
       try {
         await cmd.redo();
+        if (cmd.structural) await autoArrange().catch(toastError);
         set((s) => ({ future: s.future.slice(0, -1), past: [...s.past, cmd] }));
         get().toast(`Rehecho: ${cmd.label}`);
       } catch (e) {
@@ -476,9 +501,15 @@ export const useEditor = create<EditorState>((set, get) => {
         const snap: Snapshot = { persons: [res.person], parentChild: res.parentChild, partnerships: res.partnerships };
         record({
           label: `Agregar ${PLACEHOLDER[kind].toLowerCase()}`,
+          structural: true,
           undo: () => R.deletePersons([res.person.id]),
           redo: () => R.restore(snap),
         });
+        if (!at) {
+          await autoArrange();
+          // seguir a la persona nueva: el lienzo se centra en ella
+          set((st) => ({ centerRequest: { id: res.person.id, n: (st.centerRequest?.n ?? 0) + 1 } }));
+        }
       }),
 
     updatePerson: (id, patch) =>
@@ -507,12 +538,14 @@ export const useEditor = create<EditorState>((set, get) => {
         const label = ids.length === 1 ? `Eliminar a ${fullName(snap.persons[0])}` : `Eliminar ${ids.length} personas`;
         record({
           label,
+          structural: true,
           undo: async () => {
             await R.restore(snap);
             if (rootDeleted) await R.tree({ rootPersonId: rootDeleted });
           },
           redo: () => R.deletePersons(ids),
         });
+        await autoArrange();
         const msg = ids.length === 1 ? `Eliminado: ${fullName(snap.persons[0])}` : `Eliminadas ${ids.length} personas`;
         get().toast(msg, 'info', { label: 'Deshacer', run: () => get().undo() });
       }),
@@ -535,6 +568,7 @@ export const useEditor = create<EditorState>((set, get) => {
         const pos = layoutFor(s.tree!.theme.layoutMode ?? 'generations', Object.values(s.persons), s.parentChild, s.partnerships);
         const after = [...pos].map(([id, p]) => ({ id, ...p }));
         const apply = async (items: typeof after) => {
+          set({ animateUntil: Date.now() + 700 });
           await R.positions(items);
           set((st) => ({ fitRequest: st.fitRequest + 1 }));
         };
@@ -547,7 +581,8 @@ export const useEditor = create<EditorState>((set, get) => {
       guard(async () => {
         await R.link(parentId, childId, kind);
         const k = get().parentChild.find((r) => samePc(r, { parentId, childId }))?.kind;
-        record({ label: 'Vincular padre/hijo', undo: () => R.unlink(parentId, childId), redo: () => R.link(parentId, childId, k) });
+        record({ label: 'Vincular padre/hijo', structural: true, undo: () => R.unlink(parentId, childId), redo: () => R.link(parentId, childId, k) });
+        await autoArrange();
         get().toast('Relación padre/hijo creada');
       }),
 
@@ -562,7 +597,8 @@ export const useEditor = create<EditorState>((set, get) => {
       guard(async () => {
         const old = get().parentChild.find((r) => samePc(r, { parentId, childId }))!;
         await R.unlink(parentId, childId);
-        record({ label: 'Quitar vínculo', undo: () => R.link(parentId, childId, old.kind), redo: () => R.unlink(parentId, childId) });
+        record({ label: 'Quitar vínculo', structural: true, undo: () => R.link(parentId, childId, old.kind), redo: () => R.unlink(parentId, childId) });
+        await autoArrange();
       }),
 
     addPartnership: (a, b, kind) =>
@@ -571,9 +607,11 @@ export const useEditor = create<EditorState>((set, get) => {
         L.add({ partnerships: [p] });
         record({
           label: 'Vincular pareja',
+          structural: true,
           undo: () => R.deletePartnership(p.id),
           redo: () => R.restore({ persons: [], parentChild: [], partnerships: [p] }),
         });
+        await autoArrange();
         get().toast('Pareja vinculada');
       }),
 
@@ -590,9 +628,11 @@ export const useEditor = create<EditorState>((set, get) => {
         await R.deletePartnership(id);
         record({
           label: 'Quitar pareja',
+          structural: true,
           undo: () => R.restore({ persons: [], parentChild: [], partnerships: [p] }),
           redo: () => R.deletePartnership(id),
         });
+        await autoArrange();
       }),
 
     /** Quita de una vez todos los vínculos de una línea (p. ej. ambos padres → hijo). */
@@ -609,9 +649,11 @@ export const useEditor = create<EditorState>((set, get) => {
         set({ selectedEdge: null });
         record({
           label: 'Quitar vínculo',
+          structural: true,
           undo: () => R.restore({ persons: [], parentChild: pcRows, partnerships: partner ? [partner] : [] }),
           redo: doIt,
         });
+        await autoArrange();
         get().toast('Vínculo eliminado', 'info', { label: 'Deshacer', run: () => get().undo() });
       }),
   };

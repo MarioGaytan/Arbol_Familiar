@@ -80,6 +80,8 @@ export interface DecorNodeData extends Record<string, unknown> {
   h: number;
   /** trunk: puntos donde el tronco se abre en ramas (relativos al nodo) */
   anchors?: { x: number; y: number; w: number }[];
+  /** trunk: posición del tronco (relativa al nodo) */
+  trunk?: { x: number; forkY: number; baseY: number };
   /** rings: radios de cada generación */
   radii?: number[];
 }
@@ -284,30 +286,47 @@ export function buildFlow(a: BuildArgs) {
   // ---------- Decoración: tronco (modo árbol) o anillos (modo radial) ----------
   const centerOf = (id: string) => ({ x: (persons[id].posX ?? 0) + NODE_W / 2, y: (persons[id].posY ?? 0) + NODE_H / 2 });
   if (mode === 'tree' && Object.keys(persons).length) {
+    // Raíces de cada linaje: parejas (o personas) con hijos y sin padres registrados, en la generación que sea.
+    // Antes sólo se tomaba la generación más antigua y los demás linajes quedaban "flotando".
+    const isChild = new Set(families.flatMap((f) => f.children.map((c) => c.id)));
     const anchors = families
-      .filter((f) => f.children.length && f.parents.every((p) => persons[p] && (gen.get(p) ?? 0) === 0))
+      .filter((f) => f.children.length && f.parents.every((p) => persons[p] && !isChild.has(p)))
       .map((f) => {
         const cs = f.parents.map(centerOf);
-        return { x: cs.reduce((s, c) => s + c.x, 0) / cs.length, y: cs.reduce((s, c) => s + c.y, 0) / cs.length, w: wOf(f.parents[0]) };
+        const x = cs.reduce((s, c) => s + c.x, 0) / cs.length;
+        // Pareja: la rama llega a la línea que los une; persona sola: al borde inferior de su tarjeta
+        const y = f.parents.length === 2 ? cs.reduce((s, c) => s + c.y, 0) / cs.length : cs[0].y + NODE_H / 2 - 4;
+        return { x, y, w: wOf(f.parents[0]) };
       });
     if (!anchors.length) {
-      const oldest = Object.keys(persons).filter((id) => (gen.get(id) ?? 0) === 0);
-      anchors.push(...oldest.slice(0, 1).map((id) => ({ ...centerOf(id), w: 10 })));
+      const first = Object.keys(persons)[0];
+      const c = centerOf(first);
+      anchors.push({ x: c.x, y: c.y + NODE_H / 2 - 4, w: 10 });
     }
-    const minX = Math.min(...anchors.map((p) => p.x)) - 220;
-    const maxX = Math.max(...anchors.map((p) => p.x)) + 220;
-    const top = Math.min(...anchors.map((p) => p.y));
-    const h = NODE_H / 2 + 320;
+    // El tronco nace debajo de la tarjeta más baja y se reparte en ramas hacia cada raíz
+    const lowest = Math.max(...Object.keys(persons).map((id) => centerOf(id).y)) + NODE_H / 2;
+    const forkY = lowest + 110;
+    const baseY = lowest + 360;
+    const trunkX = anchors.reduce((s, a) => s + a.x, 0) / anchors.length;
+    const minX = Math.min(trunkX, ...anchors.map((p) => p.x)) - 260;
+    const maxX = Math.max(trunkX, ...anchors.map((p) => p.x)) + 260;
+    const top = Math.min(...anchors.map((p) => p.y)) - 10;
     nodes.push({
       id: 'decor:trunk',
       type: 'decor' as const,
       position: { x: minX, y: top },
-      data: { kind: 'trunk', w: maxX - minX, h, anchors: anchors.map((p) => ({ x: p.x - minX, y: p.y - top, w: p.w })) },
+      data: {
+        kind: 'trunk',
+        w: maxX - minX,
+        h: baseY - top + 20,
+        anchors: anchors.map((p) => ({ x: p.x - minX, y: p.y - top, w: p.w })),
+        trunk: { x: trunkX - minX, forkY: forkY - top, baseY: baseY - top },
+      },
       draggable: false,
       selectable: false,
       connectable: false,
       width: maxX - minX,
-      height: h,
+      height: baseY - top + 20,
       zIndex: -2,
     });
   }

@@ -296,7 +296,10 @@ export function PersonPanel() {
 
         <Section id="notas" icon={<StickyNote size={15} />} title="Notas" badge={person.notes ? <span className="count-badge">•</span> : null} defaultOpen={false}>
           <Field label="Historia, oficio, anécdotas…" value={person.notes} multiline onSave={(v) => save({ notes: v })} maxLength={5000} />
-          <p className="fine">Las notas son privadas: no aparecen en el enlace público.</p>
+          <p className="fine">
+            Las notas son privadas: no aparecen en el enlace público. Evita anotar datos sensibles de personas vivas (salud,
+            religión, origen étnico, preferencias…) sin su consentimiento expreso.
+          </p>
         </Section>
 
         <Section id="familia" icon={<Users size={15} />} title="Familia" badge={<span className="count-badge">{familyCount}</span>}>

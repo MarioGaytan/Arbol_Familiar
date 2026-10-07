@@ -43,6 +43,8 @@ export interface TreeSettings {
   /** Diseño propio del que se partió (sólo informativo) */
   userThemeId?: string;
   layoutMode?: LayoutMode;
+  /** Reordenar solo al agregar o quitar personas/vínculos (por defecto sí) */
+  autoArrange?: boolean;
   accent?: string;
   edgeColor?: string;
   background?: string;
@@ -118,6 +120,8 @@ export interface SharingInfo {
   members: { userId: string; name: string; email: string; role: 'owner' | 'editor' }[];
   invites: { email: string; role: 'editor' }[];
   publicToken: string | null;
+  /** Ocultar fotos, fechas y lugares de personas vivas en el enlace público */
+  publicHideLiving: boolean;
 }
 
 export interface Tree {
