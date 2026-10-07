@@ -1,0 +1,13 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: arbol
+      POSTGRES_PASSWORD: arbol
+      POSTGRES_DB: arbol
+    ports:
+      - "5440:5432"
+    volumes:
+      - arbol_pg:/var/lib/postgresql/data
+volumes:
+  arbol_pg:

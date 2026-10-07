@@ -1,0 +1,46 @@
+# --- Dependencias y compilados (se regeneran con npm install / npm run build) ---
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+
+# --- SECRETOS: nunca subir ---
+# Variables de entorno (contraseñas de BD, llaves de Cloudflare R2, etc.)
+.env
+.env.*
+!.env.example
+# Llaves y certificados
+*.pem
+*.key
+*.p12
+*.pfx
+# Credenciales de herramientas en la nube
+.railway/
+.wrangler/
+
+# --- DATOS PERSONALES: nunca subir ---
+# Fotos subidas en desarrollo (son fotos reales de tu familia)
+server/uploads/
+uploads/
+# Respaldos / exportaciones de la base de datos y árboles exportados
+*.sql.gz
+respaldo*.sql
+backup*.sql
+dump*.sql
+*.dump
+*.backup
+backups/
+*.ged
+!**/fixtures/*.ged
+
+# --- Locales del editor / sistema / herramientas ---
+.claude/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+npm-debug.log*
+coverage/
