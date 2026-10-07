@@ -5,11 +5,10 @@ import {
 } from 'lucide-react';
 import { useEditor } from '../store';
 import { fullName, initials, lifespan } from '../lib/format';
-import { resolveTheme, THEMES } from '../lib/themes';
-import type { EdgeStyle, LayoutMode, Pattern, PhotoShape } from '../types';
 import { FamilyCanvas, useDerived } from './FamilyCanvas';
 import { PersonPanel } from './PersonPanel';
 import { PhotoCropper } from './PhotoCropper';
+import { ThemePanel } from './ThemePanel';
 import { ShareDialog } from './ShareDialog';
 import { useLiveSync } from '../lib/useLiveSync';
 
@@ -51,7 +50,8 @@ function Sidebar() {
         {!list.length && <p className="empty">Sin resultados</p>}
       </div>
       <div className="legend edit-only">
-        <strong>Consejos</strong>
+        <details>
+        <summary>Consejos y atajos</summary>
         <ul>
           <li>Arrastra desde el punto <b>inferior</b> de una tarjeta a un espacio vacío para crear un hijo; desde el <b>superior</b>, un padre; desde un <b>lado</b>, una pareja.</li>
           <li>Conecta dos tarjetas existentes arrastrando entre sus puntos.</li>
@@ -60,116 +60,7 @@ function Sidebar() {
           <li><kbd>Supr</kbd> borra lo seleccionado; haz clic en una línea para quitar ese vínculo.</li>
           <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> deshace, <kbd>Ctrl</kbd>+<kbd>Y</kbd> rehace.</li>
         </ul>
-      </div>
-    </aside>
-  );
-}
-
-const LAYOUT_MODES: [LayoutMode, string, string][] = [
-  ['generations', 'Generaciones', 'De arriba hacia abajo'],
-  ['tree', 'Árbol', 'Crece hacia arriba desde un tronco'],
-  ['radial', 'Radial', 'Anillos desde el centro'],
-];
-
-function ModeIcon({ mode }: { mode: LayoutMode }) {
-  const c = 'currentColor';
-  if (mode === 'tree')
-    return (
-      <svg viewBox="0 0 48 40" width="48" height="40">
-        <path d="M22 39 C22 30 23 26 24 22 C25 26 26 30 26 39 Z" fill={c} />
-        <path d="M24 23 C20 18 12 18 10 12 M24 23 C28 18 36 18 38 12 M24 22 L24 8" stroke={c} strokeWidth="2.5" fill="none" strokeLinecap="round" />
-        {[[10, 9], [24, 6], [38, 9]].map(([x, y]) => <circle key={x} cx={x} cy={y} r="4.5" fill={c} opacity=".55" />)}
-      </svg>
-    );
-  if (mode === 'radial')
-    return (
-      <svg viewBox="0 0 48 40" width="48" height="40">
-        <circle cx="24" cy="20" r="9" stroke={c} fill="none" strokeDasharray="2 3" opacity=".6" />
-        <circle cx="24" cy="20" r="17" stroke={c} fill="none" strokeDasharray="2 3" opacity=".6" />
-        <circle cx="24" cy="20" r="4" fill={c} />
-        {[0, 72, 144, 216, 288].map((a) => <circle key={a} cx={24 + 17 * Math.sin((a * Math.PI) / 180)} cy={20 - 17 * Math.cos((a * Math.PI) / 180)} r="3.5" fill={c} opacity=".55" />)}
-      </svg>
-    );
-  return (
-    <svg viewBox="0 0 48 40" width="48" height="40">
-      <rect x="18" y="3" width="12" height="9" rx="2" fill={c} />
-      <path d="M24 12 V18 M10 18 H38 M10 18 V24 M24 18 V24 M38 18 V24" stroke={c} strokeWidth="2" fill="none" />
-      {[10, 24, 38].map((x) => <rect key={x} x={x - 6} y="25" width="12" height="9" rx="2" fill={c} opacity=".55" />)}
-    </svg>
-  );
-}
-
-function ThemePanel({ onClose }: { onClose: () => void }) {
-  const tree = useEditor((s) => s.tree)!;
-  const updateTheme = useEditor((s) => s.updateTheme);
-  const setLayoutMode = useEditor((s) => s.setLayoutMode);
-  const t = resolveTheme(tree.theme);
-  const seg = <T extends string>(value: T, opts: [T, string][], on: (v: T) => void) => (
-    <div className="segmented">
-      {opts.map(([k, l]) => (
-        <button key={k} className={value === k ? 'on' : ''} onClick={() => on(k)}>{l}</button>
-      ))}
-    </div>
-  );
-
-  return (
-    <aside className="panel">
-      <header className="panel-head">
-        <div className="panel-title"><strong>Diseño</strong></div>
-        <button className="icon-btn" onClick={onClose}><X size={18} /></button>
-      </header>
-      <div className="panel-body">
-        <h4>Forma del árbol</h4>
-        <div className="modes">
-          {LAYOUT_MODES.map(([k, title, desc]) => (
-            <button key={k} className={`mode-card ${(tree.theme.layoutMode ?? 'generations') === k ? 'on' : ''}`} onClick={() => tree.theme.layoutMode !== k && setLayoutMode(k)}>
-              <ModeIcon mode={k} />
-              <strong>{title}</strong>
-              <small>{desc}</small>
-            </button>
-          ))}
-        </div>
-
-        <h4>Estilos prediseñados</h4>
-        <div className="presets">
-          {THEMES.map((th) => (
-            <button
-              key={th.id}
-              className={`preset ${t.id === th.id ? 'on' : ''}`}
-              onClick={() => updateTheme({ preset: th.id, accent: undefined, edgeColor: undefined, background: undefined, photoShape: undefined, edgeStyle: undefined, pattern: undefined })}
-              style={{ background: th.bg, color: th.text, fontFamily: th.nameFont }}
-            >
-              <span className="preset-card" style={{ background: th.cardBg, borderColor: th.cardBorder, borderRadius: th.radius / 2 }}>
-                <i style={{ background: th.accent, borderRadius: th.photoShape === 'circle' ? '50%' : 4 }} />
-              </span>
-              {th.name}
-            </button>
-          ))}
-        </div>
-
-        <h4>Colores</h4>
-        <div className="color-rows">
-          <label>Acento <input type="color" value={t.accent} onChange={(e) => updateTheme({ accent: e.target.value })} /></label>
-          <label>Líneas <input type="color" value={t.edge} onChange={(e) => updateTheme({ edgeColor: e.target.value })} /></label>
-          <label>Fondo <input type="color" value={t.bg} onChange={(e) => updateTheme({ background: e.target.value })} /></label>
-        </div>
-
-        <h4>Forma de la foto</h4>
-        {seg<PhotoShape>(t.photoShape, [['circle', 'Círculo'], ['rounded', 'Redondeada'], ['square', 'Cuadrada']], (v) => updateTheme({ photoShape: v }))}
-
-        <h4>Líneas de conexión</h4>
-        {seg<EdgeStyle>(t.edgeStyle, [['smoothstep', 'Escalón suave'], ['step', 'Escalón'], ['default', 'Curva'], ['straight', 'Recta'], ['branch', 'Rama']], (v) => updateTheme({ edgeStyle: v }))}
-
-        <h4>Fondo del lienzo</h4>
-        {seg<Pattern>(t.pattern, [['dots', 'Puntos'], ['lines', 'Cuadrícula'], ['cross', 'Cruces'], ['none', 'Liso']], (v) => updateTheme({ pattern: v }))}
-
-        <h4>Mostrar</h4>
-        <label className="check">
-          <input type="checkbox" checked={t.showDates} onChange={(e) => updateTheme({ showDates: e.target.checked })} /> Fechas
-        </label>
-        <label className="check">
-          <input type="checkbox" checked={t.showRelations} onChange={(e) => updateTheme({ showRelations: e.target.checked })} /> Parentesco con la persona central
-        </label>
+        </details>
       </div>
     </aside>
   );
@@ -219,7 +110,6 @@ export function Toasts() {
 
 export function Editor({ onBack }: { onBack: () => void }) {
   const s = useEditor();
-  const [showTheme, setShowTheme] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [name, setName] = useState(s.tree?.name ?? '');
@@ -310,7 +200,7 @@ export function Editor({ onBack }: { onBack: () => void }) {
               <button className={`btn ${s.snap ? 'active' : ''}`} onClick={() => s.set({ snap: !s.snap })} title="Alinear a cuadrícula al mover">
                 <Grid3x3 size={16} />
               </button>
-              <button className={`btn ${showTheme ? 'active' : ''}`} onClick={() => setShowTheme((v) => !v)}>
+              <button className={`btn ${s.panel === 'design' ? 'active' : ''}`} onClick={() => s.openPanel(s.panel === 'design' ? null : 'design')} title="Diseño: colores, tipografía y forma del árbol">
                 <Palette size={16} /> <span>Diseño</span>
               </button>
             </>
@@ -334,7 +224,7 @@ export function Editor({ onBack }: { onBack: () => void }) {
               </div>
             )}
           </main>
-          {showTheme && !ro ? <ThemePanel onClose={() => setShowTheme(false)} /> : <PersonPanel />}
+          {s.panel === 'design' && !ro ? <ThemePanel /> : s.panel === 'person' ? <PersonPanel /> : null}
         </div>
         {!ro && <PhotoCropper />}
         {!ro && <RelationChooser />}

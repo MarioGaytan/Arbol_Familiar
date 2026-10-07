@@ -60,8 +60,9 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
               <button className="btn primary" disabled={busy || !email.trim()}><UserPlus size={15} /> Invitar</button>
             </form>
             <p className="hint">
-              Si aún no tiene cuenta, la invitación queda pendiente y obtendrá acceso al registrarse con ese correo.
-              Avísale tú: la app no envía correos.
+              Si aún no tiene cuenta, el acceso queda pendiente y se activa cuando se registre con ese correo. Para
+              registrarse necesita un <b>enlace de invitación</b>{me?.isAdmin ? ' (créalo en Administración)' : ' que le da el administrador'}.
+              La app no envía correos: avísale tú.
             </p>
             {!info && <p className="muted">Cargando…</p>}
             <ul className="member-list">
@@ -72,7 +73,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
                     <strong>{m.name}{m.userId === me?.id ? ' (tú)' : ''}</strong>
                     <small>{m.email}</small>
                   </span>
-                  <span className={`role-badge ${m.role}`}>{m.role === 'owner' ? 'Dueño' : 'Editor'}</span>
+                  <span className={`role-badge role-${m.role}`}>{m.role === 'owner' ? 'Dueño' : 'Editor'}</span>
                   {m.role !== 'owner' && (
                     <button className="icon-btn" title="Quitar acceso" onClick={() => run(() => api.removeMember(tree.id, m.userId))}>
                       <X size={15} />

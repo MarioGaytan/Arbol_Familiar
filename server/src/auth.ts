@@ -15,6 +15,7 @@ export interface SessionUser {
   id: string;
   email: string;
   name: string;
+  isAdmin: boolean;
 }
 
 declare module 'fastify' {
@@ -46,7 +47,7 @@ export async function verifyPassword(password: string, stored: string) {
 /** Hash ficticio para que un correo inexistente tarde lo mismo que uno real (evita enumerar cuentas). */
 export const DUMMY_HASH = await hashPassword(randomBytes(12).toString('hex'));
 
-const sha256 = (s: string) => createHash('sha256').update(s).digest();
+export const sha256 = (s: string) => createHash('sha256').update(s).digest();
 
 export async function createSession(reply: FastifyReply, userId: string) {
   const token = randomBytes(32).toString('base64url');
@@ -71,8 +72,8 @@ export async function userFromRequest(req: FastifyRequest): Promise<SessionUser 
   const token = req.cookies[SESSION_COOKIE];
   if (!token) return null;
   const { rows } = await pool.query<SessionUser>(
-    `SELECT u.id, u.email, u.name FROM sessions s JOIN users u ON u.id = s.user_id
-      WHERE s.token_hash = $1 AND s.expires_at > now()`,
+    `SELECT u.id, u.email, u.name, u.is_admin AS "isAdmin" FROM sessions s JOIN users u ON u.id = s.user_id
+      WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status = 'active'`,
     [sha256(token)],
   );
   return rows[0] ?? null;
@@ -98,3 +99,6 @@ export async function claimInvites(c: pg.PoolClient, userId: string, email: stri
 }
 
 export const newPublicToken = () => randomBytes(18).toString('base64url');
+
+/** Token de invitación de registro (sólo se muestra una vez; en la base se guarda su hash). */
+export const newInviteToken = () => randomBytes(24).toString('base64url');

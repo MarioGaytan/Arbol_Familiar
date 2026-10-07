@@ -3,6 +3,7 @@ import {
   Background,
   BackgroundVariant,
   ConnectionMode,
+  ControlButton,
   Controls,
   MiniMap,
   ReactFlow,
@@ -12,7 +13,7 @@ import {
   type NodeChange,
   type OnConnectEnd,
 } from '@xyflow/react';
-import { Unlink, X } from 'lucide-react';
+import { Map as MapIcon, Unlink, X } from 'lucide-react';
 import { useEditor } from '../store';
 import { buildIndex, computeRelations, findPath } from '../lib/kinship';
 import { buildFlow, computeFamilies, NODE_H, NODE_W, placeUnions, type FlowNode, type LinkEdge } from '../lib/graph';
@@ -153,7 +154,31 @@ export function FamilyCanvas() {
       );
     }, 50);
     return () => clearTimeout(t);
-  }, [s.fitRequest, rf]);
+    // sin `rf` en las dependencias: React Flow lo recrea al mover la vista y provocaría un bucle de movimientos
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.fitRequest]);
+
+  // En el celular la ficha ocupa la mitad de abajo: subir el lienzo para que la persona elegida quede a la vista
+  const lastShown = useRef<string | null>(null);
+  useEffect(() => {
+    // Sólo cuando cambia la selección (no en cada render), si no la vista "se deslizaría" sola
+    if (lastShown.current === s.selectedId) return;
+    lastShown.current = s.selectedId;
+    if (!s.selectedId || window.innerWidth > 820) return;
+    const p = useEditor.getState().persons[s.selectedId];
+    if (!p) return;
+    const t = setTimeout(() => {
+      const pane = document.querySelector('.canvas-wrap .react-flow')?.getBoundingClientRect();
+      if (!pane) return;
+      const { zoom } = rf.getViewport();
+      // Centro horizontal y a ~22 % de la altura: la hoja inferior ocupa ~58 % de la pantalla
+      const x = pane.width / 2 - ((p.posX ?? 0) + NODE_W / 2) * zoom;
+      const y = pane.height * 0.22 - ((p.posY ?? 0) + NODE_H / 2) * zoom;
+      rf.setViewport({ x, y, zoom }, { duration: 300 });
+    }, 50);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.selectedId]);
 
   // Centrar a una persona (búsqueda)
   useEffect(() => {
@@ -161,7 +186,8 @@ export function FamilyCanvas() {
     if (!req) return;
     const p = useEditor.getState().persons[req.id];
     if (p) rf.setCenter((p.posX ?? 0) + NODE_W / 2, (p.posY ?? 0) + NODE_H / 2, { zoom: 1.1, duration: 600 });
-  }, [s.centerRequest, rf]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.centerRequest]);
 
   // Línea seleccionada (clic en un vínculo) → se resalta y se puede quitar
   const selEdgeId = s.selectedEdge?.edgeId;
@@ -182,10 +208,14 @@ export function FamilyCanvas() {
   nodesRef.current = nodes;
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
-      const t = ev.target as HTMLElement;
-      if (t.closest('input, textarea, select, [contenteditable]') || document.querySelector('.modal-bg')) return;
+      const t = ev.target as HTMLElement | null;
+      if (t?.closest?.('input, textarea, select, [contenteditable]') || document.querySelector('.modal-bg')) return;
       const st = useEditor.getState();
-      if (ev.key === 'Escape') return st.select(null);
+      if (ev.key === 'Escape') {
+        st.select(null);
+        st.openPanel(null);
+        return;
+      }
       if (st.readOnly) return;
       const mod = ev.ctrlKey || ev.metaKey;
       const k = ev.key.toLowerCase();
@@ -252,8 +282,12 @@ export function FamilyCanvas() {
         {theme.pattern !== 'none' && (
           <Background variant={PATTERN[theme.pattern]} color={theme.patternColor} gap={theme.pattern === 'dots' ? 22 : 44} size={theme.pattern === 'dots' ? 1.6 : 1} />
         )}
-        <Controls showInteractive={false} position="bottom-left" />
-        <MiniMap
+        <Controls showInteractive={false} position="bottom-left">
+          <ControlButton onClick={() => s.set({ showMinimap: !s.showMinimap })} title={s.showMinimap ? 'Ocultar minimapa' : 'Mostrar minimapa'}>
+            <MapIcon size={14} />
+          </ControlButton>
+        </Controls>
+        {s.showMinimap && <MiniMap
           pannable
           zoomable
           position="bottom-right"
@@ -261,7 +295,7 @@ export function FamilyCanvas() {
           nodeBorderRadius={8}
           maskColor="rgba(0,0,0,0.08)"
           style={{ background: theme.cardBg }}
-        />
+        />}
       </ReactFlow>
       {s.selectedEdge && (
         <div className="edge-bar">

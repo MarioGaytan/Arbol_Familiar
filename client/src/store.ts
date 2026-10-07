@@ -47,6 +47,9 @@ interface EditorState {
 
   selectedId: string | null;
   selectedEdge: EdgeSelection | null;
+  /** Panel derecho: sólo uno a la vez (persona o diseño), nunca encimados */
+  panel: 'person' | 'design' | null;
+  showMinimap: boolean;
   /** Al crear a alguien, el panel enfoca y selecciona el campo nombre */
   justCreatedId: string | null;
   focusMode: boolean;
@@ -66,6 +69,7 @@ interface EditorState {
   toast: (msg: string, kind?: Toast['kind'], action?: Toast['action']) => void;
   select: (id: string | null) => void;
   focusPerson: (id: string) => void;
+  openPanel: (panel: 'person' | 'design' | null) => void;
   set: (patch: Partial<EditorState>) => void;
 
   undo: () => Promise<void>;
@@ -209,6 +213,16 @@ export const useEditor = create<EditorState>((set, get) => {
     },
   };
 
+  // Guardado diferido del diseño: arrastrar un selector de color genera decenas de cambios por segundo
+  let themeTimer: ReturnType<typeof setTimeout> | undefined;
+  const saveThemeSoon = () => {
+    clearTimeout(themeTimer);
+    themeTimer = setTimeout(() => {
+      const t = get().tree;
+      if (t) api.updateTree(t.id, { theme: t.theme }).catch(toastError);
+    }, 400);
+  };
+
   const positionsOf = (ids: string[]) =>
     ids.map((id) => get().persons[id]).filter(Boolean).map((p) => ({ id: p.id, x: p.posX ?? 0, y: p.posY ?? 0 }));
 
@@ -222,6 +236,7 @@ export const useEditor = create<EditorState>((set, get) => {
       partnerships: data.partnerships,
       selectedId: null,
       selectedEdge: null,
+      panel: null,
       loading: false,
     });
     if (data.persons.some((p) => p.posX === null || p.posY === null)) {
@@ -249,6 +264,8 @@ export const useEditor = create<EditorState>((set, get) => {
     busy: false,
     selectedId: null,
     selectedEdge: null,
+    panel: null,
+    showMinimap: typeof window === 'undefined' || window.innerWidth > 900,
     justCreatedId: null,
     focusMode: false,
     snap: false,
@@ -313,9 +330,17 @@ export const useEditor = create<EditorState>((set, get) => {
       }
     },
 
-    select: (id) => set({ selectedId: id, selectedEdge: null, justCreatedId: null }),
+    // Elegir a alguien abre su ficha (reemplaza al panel de diseño); deseleccionar sólo cierra la ficha
+    select: (id) =>
+      set((s) => ({
+        selectedId: id,
+        selectedEdge: null,
+        justCreatedId: null,
+        panel: id ? 'person' : s.panel === 'person' ? null : s.panel,
+      })),
+    openPanel: (panel) => set({ panel }),
     focusPerson: (id) =>
-      set((s) => ({ selectedId: id, selectedEdge: null, justCreatedId: null, centerRequest: { id, n: (s.centerRequest?.n ?? 0) + 1 } })),
+      set((s) => ({ selectedId: id, selectedEdge: null, justCreatedId: null, panel: 'person', centerRequest: { id, n: (s.centerRequest?.n ?? 0) + 1 } })),
 
     // ---------- Historial ----------
     undo: async () => {
@@ -367,7 +392,8 @@ export const useEditor = create<EditorState>((set, get) => {
       guard(async () => {
         const before = get().tree!.theme;
         const after = { ...before, ...patch };
-        await R.tree({ theme: after });
+        set((st) => ({ tree: { ...st.tree!, theme: after } }));
+        saveThemeSoon();
         record({
           label: 'Cambiar diseño',
           mergeKey: `theme:${Object.keys(patch).join(',')}`,
@@ -446,7 +472,7 @@ export const useEditor = create<EditorState>((set, get) => {
 
         const res = await api.createPerson(treeId(), body);
         L.add({ persons: [res.person], parentChild: res.parentChild, partnerships: res.partnerships });
-        set({ selectedId: res.person.id, selectedEdge: null, justCreatedId: res.person.id });
+        set({ selectedId: res.person.id, selectedEdge: null, justCreatedId: res.person.id, panel: 'person' });
         const snap: Snapshot = { persons: [res.person], parentChild: res.parentChild, partnerships: res.partnerships };
         record({
           label: `Agregar ${PLACEHOLDER[kind].toLowerCase()}`,

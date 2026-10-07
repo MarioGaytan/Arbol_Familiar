@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { pool, tx } from './db.js';
 import {
-  claimInvites, createSession, destroySession, DUMMY_HASH, hashPassword, newPublicToken, treeRole,
+  claimInvites, createSession, destroySession, DUMMY_HASH, hashPassword, newPublicToken, sha256, treeRole,
   userFromRequest, verifyPassword,
 } from './auth.js';
 
@@ -22,6 +22,7 @@ export async function registerAccountRoutes(app: FastifyInstance) {
     req.user = await userFromRequest(req);
     if (PUBLIC_PREFIXES.some((p) => req.url.startsWith(p))) return;
     if (!req.user) return reply.code(401).send({ error: 'Inicia sesión para continuar' });
+    if (req.url.startsWith('/api/admin/') && !req.user.isAdmin) return reply.code(403).send({ error: 'Sólo para administradores' });
 
     // Toda ruta /api/trees/:treeId/... exige ser miembro del árbol
     const treeId = (req.params as { treeId?: string } | undefined)?.treeId;
@@ -39,27 +40,75 @@ export async function registerAccountRoutes(app: FastifyInstance) {
   // ---------- Cuentas ----------
   const authLimit = { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } };
 
+  /** ¿Todavía no hay ninguna cuenta? Entonces la primera persona crea la cuenta de administrador. */
+  app.get('/api/auth/setup', async () => {
+    const { rows } = await pool.query('SELECT NOT EXISTS (SELECT 1 FROM users) AS "needsSetup"');
+    return rows[0];
+  });
+
+  const inviteLimit = { config: { rateLimit: { max: 30, timeWindow: '15 minutes' } } };
+
+  /** Comprueba un enlace de invitación antes de mostrar el formulario de registro. */
+  app.get('/api/auth/invite/:token', inviteLimit, async (req, reply) => {
+    const { token } = z.object({ token: z.string().min(16).max(80) }).parse(req.params);
+    const { rows } = await pool.query(
+      `SELECT email, expires_at AS "expiresAt", used_at AS "usedAt", revoked_at AS "revokedAt"
+         FROM registration_invites WHERE token_hash = $1`,
+      [sha256(token)],
+    );
+    const inv = rows[0];
+    if (!inv) return reply.code(404).send({ error: 'Este enlace de invitación no existe.' });
+    if (inv.usedAt) return reply.code(410).send({ error: 'Este enlace de invitación ya se usó.' });
+    if (inv.revokedAt) return reply.code(410).send({ error: 'Este enlace de invitación fue cancelado.' });
+    if (new Date(inv.expiresAt) < new Date()) return reply.code(410).send({ error: 'Este enlace de invitación caducó.' });
+    return { email: inv.email, expiresAt: inv.expiresAt };
+  });
+
   app.post('/api/auth/register', authLimit, async (req, reply) => {
     const body = z
       .object({
         name: z.string().trim().min(1, 'Escribe tu nombre').max(120),
         email,
         password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(200),
+        invite: z.string().min(16).max(80).optional(),
       })
       .parse(req.body);
     const passwordHash = await hashPassword(body.password);
     const user = await tx(async (c) => {
+      // Serializa los registros: evita que dos personas "sean la primera" o usen la misma invitación a la vez
+      await c.query('SELECT pg_advisory_xact_lock(4242)');
+      const { rows: cnt } = await c.query('SELECT count(*)::int AS n FROM users');
+      const first = cnt[0].n === 0;
+
+      let inviteId: string | null = null;
+      if (!first) {
+        if (!body.invite) throw Object.assign(new Error('El registro es sólo por invitación. Pide un enlace al administrador.'), { statusCode: 403 });
+        // Consumir la invitación de forma atómica: sólo una petición puede marcarla como usada
+        const { rows } = await c.query(
+          `UPDATE registration_invites SET used_at = now()
+            WHERE token_hash = $1 AND used_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+            RETURNING id, email`,
+          [sha256(body.invite)],
+        );
+        if (!rows[0]) throw Object.assign(new Error('El enlace de invitación no es válido, ya se usó o caducó.'), { statusCode: 403 });
+        if (rows[0].email && rows[0].email.toLowerCase() !== body.email) {
+          throw Object.assign(new Error(`Esta invitación es para ${rows[0].email}.`), { statusCode: 403 });
+        }
+        inviteId = rows[0].id;
+      }
+
       const exists = await c.query('SELECT 1 FROM users WHERE email = $1', [body.email]);
       if (exists.rowCount) throw Object.assign(new Error('Ya existe una cuenta con ese correo'), { statusCode: 409 });
       const { rows } = await c.query(
-        'INSERT INTO users(name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, email, name',
-        [body.name, body.email, passwordHash],
+        `INSERT INTO users(name, email, password_hash, is_admin, last_login_at) VALUES ($1, $2, $3, $4, now())
+         RETURNING id, email, name, is_admin AS "isAdmin"`,
+        [body.name, body.email, passwordHash, first],
       );
       const u = rows[0];
+      if (inviteId) await c.query('UPDATE registration_invites SET used_by = $1 WHERE id = $2', [u.id, inviteId]);
       await claimInvites(c, u.id, body.email);
-      // Primer usuario de la instalación: se queda con los árboles creados antes de existir cuentas
-      const { rows: cnt } = await c.query('SELECT count(*)::int AS n FROM users');
-      if (cnt[0].n === 1) {
+      if (first) {
+        // Primer usuario de la instalación: administrador y dueño de los árboles creados antes de existir cuentas
         await c.query(
           `INSERT INTO tree_members(tree_id, user_id, role)
            SELECT t.id, $1, 'owner' FROM trees t
@@ -75,12 +124,18 @@ export async function registerAccountRoutes(app: FastifyInstance) {
 
   app.post('/api/auth/login', authLimit, async (req, reply) => {
     const body = z.object({ email, password: z.string().max(200) }).parse(req.body);
-    const { rows } = await pool.query('SELECT id, email, name, password_hash FROM users WHERE email = $1', [body.email]);
+    const { rows } = await pool.query(
+      'SELECT id, email, name, password_hash, is_admin AS "isAdmin", status FROM users WHERE email = $1',
+      [body.email],
+    );
     const u = rows[0];
     const ok = await verifyPassword(body.password, u?.password_hash ?? DUMMY_HASH);
     if (!u || !ok) return reply.code(401).send({ error: 'Correo o contraseña incorrectos' });
+    // Sólo después de comprobar la contraseña se revela que la cuenta está bloqueada
+    if (u.status !== 'active') return reply.code(403).send({ error: 'Tu cuenta está desactivada. Contacta al administrador.' });
+    await pool.query('UPDATE users SET last_login_at = now() WHERE id = $1', [u.id]);
     await createSession(reply, u.id);
-    return { user: { id: u.id, email: u.email, name: u.name } };
+    return { user: { id: u.id, email: u.email, name: u.name, isAdmin: u.isAdmin } };
   });
 
   app.post('/api/auth/logout', async (req, reply) => {

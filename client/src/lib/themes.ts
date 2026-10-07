@@ -164,15 +164,98 @@ export function resolveTheme(s: TreeSettings = {}): ResolvedTheme {
   const base = THEMES.find((t) => t.id === s.preset) ?? THEMES[0];
   return {
     ...base,
+    bg: s.background ?? base.bg,
+    pattern: s.pattern ?? base.pattern,
+    patternColor: s.patternColor ?? base.patternColor,
+    cardBg: s.cardBg ?? base.cardBg,
+    cardBorder: s.cardBorder ?? base.cardBorder,
+    text: s.text ?? base.text,
+    muted: s.muted ?? base.muted,
     accent: s.accent ?? base.accent,
     edge: s.edgeColor ?? base.edge,
-    bg: s.background ?? base.bg,
+    maleTint: s.maleTint ?? base.maleTint,
+    femaleTint: s.femaleTint ?? base.femaleTint,
+    font: s.font ?? base.font,
+    nameFont: s.nameFont ?? base.nameFont,
+    titleFont: s.titleFont ?? base.titleFont,
+    radius: s.radius ?? base.radius,
     photoShape: s.photoShape ?? base.photoShape,
     edgeStyle: s.edgeStyle ?? base.edgeStyle,
-    pattern: s.pattern ?? base.pattern,
     showDates: s.showDates ?? true,
     showRelations: s.showRelations ?? true,
   };
+}
+
+/** Colores editables del diseño, agrupados como se muestran en el panel. */
+export type ColorKey =
+  | 'background' | 'patternColor' | 'cardBg' | 'cardBorder' | 'text' | 'muted'
+  | 'accent' | 'edgeColor' | 'maleTint' | 'femaleTint';
+
+export const COLOR_GROUPS: { title: string; items: { key: ColorKey; label: string; from: keyof Theme }[] }[] = [
+  {
+    title: 'Lienzo',
+    items: [
+      { key: 'background', label: 'Fondo', from: 'bg' },
+      { key: 'patternColor', label: 'Puntos / cuadrícula', from: 'patternColor' },
+    ],
+  },
+  {
+    title: 'Tarjetas',
+    items: [
+      { key: 'cardBg', label: 'Fondo de tarjeta', from: 'cardBg' },
+      { key: 'cardBorder', label: 'Borde', from: 'cardBorder' },
+      { key: 'text', label: 'Texto', from: 'text' },
+      { key: 'muted', label: 'Texto secundario', from: 'muted' },
+      { key: 'maleTint', label: 'Tono hombres', from: 'maleTint' },
+      { key: 'femaleTint', label: 'Tono mujeres', from: 'femaleTint' },
+    ],
+  },
+  {
+    title: 'Acento y líneas',
+    items: [
+      { key: 'accent', label: 'Acento (marcos, etiquetas)', from: 'accent' },
+      { key: 'edgeColor', label: 'Líneas', from: 'edge' },
+    ],
+  },
+];
+
+export const FONTS: { label: string; value: string }[] = [
+  { label: 'Inter (moderna)', value: 'Inter, system-ui, sans-serif' },
+  { label: 'Lora (clásica)', value: 'Lora, Georgia, serif' },
+  { label: 'Playfair Display (elegante)', value: '"Playfair Display", Georgia, serif' },
+  { label: 'Great Vibes (caligráfica)', value: '"Great Vibes", "Playfair Display", cursive' },
+];
+
+/** Todos los ajustes que definen el aspecto (sin forma del árbol ni preferencias de vista). */
+export const STYLE_KEYS = [
+  'background', 'patternColor', 'cardBg', 'cardBorder', 'text', 'muted', 'accent', 'edgeColor', 'maleTint', 'femaleTint',
+  'font', 'nameFont', 'titleFont', 'radius', 'photoShape', 'edgeStyle', 'pattern',
+] as const;
+
+/** Copia completa y autónoma del diseño actual (para guardarlo como diseño propio). */
+export function snapshotStyle(s: TreeSettings): TreeSettings {
+  const t = resolveTheme(s);
+  return {
+    preset: t.id,
+    background: t.bg, patternColor: t.patternColor, cardBg: t.cardBg, cardBorder: t.cardBorder, text: t.text, muted: t.muted,
+    accent: t.accent, edgeColor: t.edge, maleTint: t.maleTint, femaleTint: t.femaleTint,
+    font: t.font, nameFont: t.nameFont, titleFont: t.titleFont, radius: t.radius,
+    photoShape: t.photoShape, edgeStyle: t.edgeStyle, pattern: t.pattern,
+  };
+}
+
+/** Contraste WCAG entre dos colores (#rrggbb). ≥ 4.5 se lee bien; < 3 cuesta leer. */
+export function contrast(a: string, b: string) {
+  const lum = (hex: string) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  if (!/^#[0-9a-f]{6}$/i.test(a) || !/^#[0-9a-f]{6}$/i.test(b)) return 21;
+  const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m);
+  return (x + 0.05) / (y + 0.05);
 }
 
 /** Variables CSS que consumen las tarjetas y las líneas (y que se capturan al exportar). */

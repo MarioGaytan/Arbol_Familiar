@@ -52,3 +52,31 @@ export const GENDER_LABEL: Record<Gender, string> = {
   other: 'Otro',
   unknown: '—',
 };
+
+const MONTHS_LONG = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+/** "1978-04-12" → "12 de abril de 1978" (respeta la precisión: año, mes o día) */
+export function longDate(d: string | null): string {
+  if (!d) return '';
+  const [y, m, day] = d.split('-');
+  if (day) return `${Number(day)} de ${MONTHS_LONG[Number(m) - 1]} de ${y}`;
+  if (m) return `${MONTHS_LONG[Number(m) - 1]} de ${y}`;
+  return y;
+}
+
+/** Edad (o edad al fallecer). Con fechas parciales se calcula por año. */
+export function age(p: Pick<Person, 'birthDate' | 'deathDate'>, today = new Date()): number | null {
+  if (!p.birthDate) return null;
+  const end = p.deathDate ? new Date(p.deathDate.padEnd(10, '-12-31').slice(0, 10)) : today;
+  const [y, m = '1', d = '1'] = p.birthDate.split('-');
+  let a = end.getFullYear() - Number(y);
+  if (p.birthDate.length >= 7 && (end.getMonth() + 1 < Number(m) || (end.getMonth() + 1 === Number(m) && end.getDate() < Number(d)))) a--;
+  return a >= 0 && a < 130 ? a : null;
+}
+
+/** Texto de edad para tarjetas y fichas: "48 años", "† a los 73" */
+export function ageText(p: Pick<Person, 'birthDate' | 'deathDate'>): string {
+  const a = age(p);
+  if (a === null) return '';
+  return p.deathDate ? `a los ${a}` : a === 1 ? '1 año' : `${a} años`;
+}

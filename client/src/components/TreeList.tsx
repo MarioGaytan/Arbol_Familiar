@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { FileUp, LogOut, Plus, Trash2, TreePine, Users } from 'lucide-react';
+import { FileUp, LogOut, Plus, Shield, Trash2, TreePine, Users } from 'lucide-react';
 import { api } from '../api';
 import { useEditor } from '../store';
 import type { Gender, Tree } from '../types';
 import { parseGedcom } from '../lib/gedcom';
 
-export function TreeList({ onOpen, onLogout }: { onOpen: (id: string) => void; onLogout: () => void }) {
+export function TreeList({ onOpen, onLogout, onAdmin }: { onOpen: (id: string) => void; onLogout: () => void; onAdmin: () => void }) {
   const toast = useEditor((s) => s.toast);
   const user = useEditor((s) => s.user);
   const [trees, setTrees] = useState<Tree[] | null>(null);
@@ -62,6 +62,9 @@ export function TreeList({ onOpen, onLogout }: { onOpen: (id: string) => void; o
     <div className="home">
       <div className="user-bar">
         <span>Hola, <b>{user?.name}</b></span>
+        {user?.isAdmin && (
+          <button className="btn sm" onClick={onAdmin}><Shield size={14} /> Administración</button>
+        )}
         <button className="btn sm ghost" onClick={onLogout}><LogOut size={14} /> Cerrar sesión</button>
       </div>
       <header className="home-hero">

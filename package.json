@@ -1,7 +1,10 @@
 {
   "name": "arbol-familiar",
   "private": true,
-  "workspaces": ["client", "server"],
+  "workspaces": [
+    "client",
+    "server"
+  ],
   "scripts": {
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
@@ -11,5 +14,7 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
-  }
+  },
+  "license": "MIT",
+  "author": "Mario Gaytan"
 }

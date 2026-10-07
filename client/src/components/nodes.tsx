@@ -3,7 +3,7 @@ import { Handle, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
 import { Baby, Heart, Star, UserPlus, Users } from 'lucide-react';
 import { NODE_H, type DecorFlowNode, type PersonFlowNode, type UnionFlowNode } from '../lib/graph';
 import { taper, verticalCurve } from '../lib/branch';
-import { initials, lifespan } from '../lib/format';
+import { ageText, initials } from '../lib/format';
 import { useEditor } from '../store';
 
 export const PersonNode = memo(function PersonNode({ id, data, selected }: NodeProps<PersonFlowNode>) {
@@ -33,7 +33,9 @@ export const PersonNode = memo(function PersonNode({ id, data, selected }: NodeP
     person.deathDate ? 'is-deceased' : '',
   ].join(' ');
   const style = person.color ? ({ '--accent': person.color, '--card-border': person.color } as CSSProperties) : undefined;
-  const dates = lifespan(person);
+  const born = person.birthDate?.slice(0, 4);
+  const died = person.deathDate?.slice(0, 4);
+  const ageLabel = ageText(person);
 
   return (
     <>
@@ -73,7 +75,7 @@ export const PersonNode = memo(function PersonNode({ id, data, selected }: NodeP
 
         {isRoot && (
           <span className="root-badge" title="Persona central">
-            <Star size={12} fill="currentColor" />
+            <Star size={11} fill="currentColor" />
           </span>
         )}
         <div className="avatar">
@@ -83,11 +85,18 @@ export const PersonNode = memo(function PersonNode({ id, data, selected }: NodeP
             <span>{initials(person)}</span>
           )}
         </div>
-        <div className="p-name" title={person.firstName}>
-          {person.firstName}
+        <div className="p-text">
+          <div className="p-name" title={[person.firstName, person.lastName].filter(Boolean).join(' ')}>
+            {person.firstName}
+          </div>
+          <div className="p-last">{person.lastName || '\u00a0'}</div>
+          {showDates && (born || died) && (
+            <div className="p-dates">
+              {born ? (died ? `${born} – ${died}` : `n. ${born}`) : `† ${died}`}
+              {ageLabel && <span className="p-age">{died ? ` · ${ageLabel}` : ` · ${ageLabel}`}</span>}
+            </div>
+          )}
         </div>
-        {person.lastName && <div className="p-last">{person.lastName}</div>}
-        {showDates && dates && <div className="p-dates">{dates}</div>}
         {showRelations && relation && <div className={`p-rel ${isRoot ? 'root' : ''}`}>{relation}</div>}
       </div>
     </>

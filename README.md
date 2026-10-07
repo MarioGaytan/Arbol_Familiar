@@ -1,175 +1,323 @@
-# Raíces · Árbol familiar
+# 🌳 Raíces — Editor de árboles genealógicos
 
-Editor de árboles familiares en un **lienzo infinito**: zoom y desplazamiento libres, tarjetas que se arrastran como en un plano, conexión de personas arrastrando entre puntos, parentescos calculados automáticamente y exportación lista para imprimir (hoja, cartel o mosaico de varias hojas).
+Aplicación web para crear, organizar, compartir e imprimir árboles familiares en un **lienzo infinito**: tarjetas con foto que se arrastran libremente, conexiones que se trazan con el ratón, parentescos que se calculan solos y exportación lista para imprenta, desde una hoja carta hasta un póster A0.
 
-## Arrancar en local
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React_18-20232A?logo=react&logoColor=61DAFB)
+![Node.js](https://img.shields.io/badge/Node.js_20-339933?logo=nodedotjs&logoColor=white)
+![Fastify](https://img.shields.io/badge/Fastify-000000?logo=fastify&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL_16-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+![Cloudflare R2](https://img.shields.io/badge/Cloudflare_R2-F38020?logo=cloudflare&logoColor=white)
 
-Requisitos: Node 20+ y Docker.
+![Editor con la ficha de una persona abierta](docs/screenshots/01-editor.webp)
 
-```bash
-npm install
-npm run db:up          # Postgres 16 en el puerto 5440
-cp server/.env.example server/.env   # (ya existe si lo generó el asistente)
-npm run dev            # API en :3001 + app en http://localhost:5173
-```
+> Todas las capturas usan una **familia inventada** con retratos ilustrados; no contienen datos reales.
 
-## Cómo se usa
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/02-arbol.webp" alt="Modo Árbol: tronco con raíces y ramas que se afinan"><br><sub><b>Modo Árbol</b>: los ancestros sobre un tronco y los descendientes en ramas.</sub></td>
+    <td width="50%"><img src="docs/screenshots/05-rastreo.webp" alt="Rastreo del parentesco entre dos personas"><br><sub><b>Rastreo</b>: el camino que une a una persona con la persona central.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/04-diseno.webp" alt="Panel de diseño con vista previa en vivo"><br><sub><b>Diseño</b>: vista previa en vivo y personalización de cada color.</sub></td>
+    <td><img src="docs/screenshots/06-exportar.webp" alt="Exportación a póster con vista previa"><br><sub><b>Exportación</b>: pósters y hojas listos para imprimir.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/07-compartir.webp" alt="Compartir con editores y enlace público"><br><sub><b>Compartir</b>: editores y enlace público de solo lectura.</sub></td>
+    <td><img src="docs/screenshots/08-admin.webp" alt="Panel de administración"><br><sub><b>Administración</b>: usuarios e invitaciones de un solo uso.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/10-acceso.webp" alt="Pantalla de acceso"><br><sub><b>Acceso</b>: registro solo por invitación.</sub></td>
+    <td align="center"><img src="docs/screenshots/09-movil.webp" alt="Vista en el celular" width="45%"><br><sub><b>Móvil</b>: la ficha se abre como hoja inferior.</sub></td>
+  </tr>
+</table>
 
-| Acción | Cómo |
-|---|---|
-| Agregar familiar | Selecciona una tarjeta → botones **Padre/Madre · Pareja · Hijo/a · Hermano/a** |
-| Crear arrastrando | Arrastra desde el punto **inferior** a un espacio vacío = hijo; **superior** = padre; **lateral** = pareja |
-| Conectar existentes | Arrastra de un punto de una tarjeta a otra (abajo→arriba = padre→hijo; lado→lado = pareja; si es ambiguo, pregunta) |
-| Foto | Arrastra una imagen sobre la tarjeta, o "Subir foto" en el panel → recortar/zoom/girar |
-| Mover | Arrastra tarjetas; `Shift` + arrastrar selecciona varias. Botón cuadrícula = alinear |
-| Rastrear | Selecciona a alguien: se resalta el camino hasta la persona central. **Rastrear** atenúa a los demás |
-| Ordenar | Reacomoda todo por generaciones, parejas juntas e hijos centrados |
-| Forma del árbol | **Diseño → Forma**: *Generaciones* (de arriba a abajo), *Árbol* (crece hacia arriba desde un tronco con raíces, ramas que se afinan) o *Radial* (abanico de anillos desde los ancestros) |
-| Deshacer / rehacer | Botones ↶ ↷ o `Ctrl+Z` / `Ctrl+Y` — cubre crear, borrar, editar, mover, vincular, ordenar y diseño |
-| Borrar | `Supr` borra la(s) persona(s) seleccionada(s); clic en una línea + `Supr` (o "Quitar vínculo") borra ese vínculo. Siempre se puede deshacer |
-| Exportar | PDF / PNG / SVG · Carta, Oficio, A4, Tabloide, A3–A0, pósters 18×24 y 24×36 in · mosaico en hojas Carta/A4 |
+---
+
+## Índice
+
+- [El problema](#el-problema)
+- [Funcionalidades](#funcionalidades)
+- [Stack tecnológico](#stack-tecnológico)
+- [Arquitectura](#arquitectura)
+- [Decisiones técnicas destacadas](#decisiones-técnicas-destacadas)
+- [Modelo de datos e integridad](#modelo-de-datos-e-integridad)
+- [Seguridad y privacidad](#seguridad-y-privacidad)
+- [Ejecutar en local](#ejecutar-en-local)
+- [Despliegue en producción](#despliegue-en-producción)
+- [Estructura del proyecto](#estructura-del-proyecto)
+- [Hoja de ruta](#hoja-de-ruta)
+- [Licencia](#licencia)
+
+---
+
+## El problema
+
+Armar un árbol genealógico en herramientas de diseño genéricas resulta engorroso: el lienzo se corta, el zoom no acompaña, las líneas hay que dibujarlas a mano y cada cambio obliga a reacomodar todo. Las plataformas de genealogía, por su parte, se centran en la investigación y no en producir una pieza visual cuidada para imprimir o regalar.
+
+**Raíces** combina ambas cosas: un editor visual tan directo como una pizarra y un modelo de datos genealógico real que se encarga de las relaciones, del orden y de los parentescos.
+
+## Funcionalidades
+
+### Edición en el lienzo
+- **Lienzo infinito** con zoom, desplazamiento, minimapa y selección múltiple; las tarjetas se mueven como objetos en un plano.
+- **Crear familiares arrastrando**: desde el borde inferior de una tarjeta nace un hijo, desde el superior un padre y desde un lateral una pareja. También hay botones rápidos y vinculación de personas existentes.
+- **Parentescos automáticos** respecto a una persona central: padres, abuelos, bisabuelos, tíos, primos, sobrinos, primos segundos, medios hermanos, cuñados, suegros, yernos, padrastros, hijastros y familia política.
+- **Rastreo de linaje**: al seleccionar a alguien se resalta el camino que lo une con la persona central, con un modo que atenúa al resto.
+- **Deshacer / rehacer** completo (`Ctrl+Z` / `Ctrl+Y`) de creaciones, borrados, ediciones, movimientos, vínculos y cambios de diseño.
+- **Borrado seguro**: `Supr` elimina personas o vínculos (haciendo clic en una línea), siempre con opción de deshacer.
+
+### Organización automática
+Tres formas de presentar el árbol, todas generadas automáticamente y luego ajustables a mano:
+
+| Generaciones | Árbol | Radial |
+|---|---|---|
+| Clásico de arriba hacia abajo: parejas juntas, hijos centrados bajo sus padres y líneas en "T". | Los ancestros sobre un **tronco con raíces** y los descendientes creciendo hacia arriba en **ramas que se afinan** generación tras generación. | Abanico de anillos concéntricos, desde los ancestros hacia las generaciones más recientes. |
+
+### Diseño
+- Seis estilos prediseñados (Clásico, Moderno, Bosque, Pergamino, Noche y Pastel).
+- **Personalización total**: cada color (fondo, tarjetas, bordes, textos, acento, líneas, tonos por género), tipografías, esquinas, forma de la foto, estilo de líneas y patrón de fondo.
+- **Avisos de legibilidad** basados en el contraste WCAG.
+- **Diseños propios** guardados por usuario y reutilizables en todos sus árboles.
+
+### Fotos
+- Recorte, zoom y rotación en el navegador; la imagen se reduce a 600×600 px en WebP (≈50 KB) antes de subirla, de modo que siempre encaja en la tarjeta.
+- Basta con arrastrar una foto sobre una tarjeta.
+
+### Exportación e impresión
+- **PDF, PNG y SVG** con título, subtítulo, márgenes, marco decorativo y vista previa.
+- Tamaños Carta, Oficio, A4, Tabloide, A3–A0 y pósters de 18×24 y 24×36 pulgadas, entre 120 y 300 DPI.
+- **Mosaico**: divide un póster en hojas Carta o A4 con zonas de solape y guías para imprimirlo en casa y unirlo.
+- **GEDCOM 5.5.1**: importación y exportación en el formato estándar de genealogía (Ancestry, MyHeritage, FamilySearch, Gramps).
+
+### Colaboración
+- **Cuentas de usuario** con registro solo por invitación.
+- **Compartir** un árbol con otros usuarios como editores.
+- **Edición en tiempo real**: los cambios de otros editores aparecen al instante, junto con quién está conectado.
+- **Enlace público de solo lectura**, revocable, que oculta las notas privadas.
+- **Panel de administración**: gestión de usuarios (permitir o negar el acceso, roles) e invitaciones de registro de un solo uso con caducidad.
+
+### Interfaz
+- Panel lateral único con pestañas (persona / diseño); en el celular se convierte en una hoja inferior.
+- Diseño adaptable a escritorio, tableta y móvil.
+
+## Stack tecnológico
+
+| Capa | Tecnología | Uso |
+|---|---|---|
+| Frontend | **React 18 + TypeScript + Vite** | Interfaz y compilación |
+| Lienzo | **React Flow (@xyflow/react)** | Grafo interactivo: zoom, arrastre, conexiones |
+| Estado | **Zustand** | Estado global e historial de comandos |
+| Layout | **dagre** + algoritmos propios | Orden automático por generaciones, tronco y radial |
+| Exportación | **html-to-image + jsPDF** | Render a PNG/SVG/PDF y mosaico |
+| Backend | **Node.js 20 + Fastify 5** | API REST y canal en tiempo real (SSE) |
+| Validación | **Zod** | Validación de todas las entradas |
+| Base de datos | **PostgreSQL 16** (`pg`) | Datos, reglas de integridad y notificaciones (`LISTEN/NOTIFY`) |
+| Archivos | **Cloudflare R2** (API S3) | Almacenamiento de fotos sin coste de salida |
+| Infraestructura | **Docker + Railway** | Imagen única que sirve API y frontend |
 
 ## Arquitectura
 
 ```
-client/  React + Vite + TypeScript
-  ├─ React Flow (@xyflow/react)  lienzo infinito, zoom, arrastre, minimapa
-  ├─ lib/kinship.ts              parentescos derivados (abuelo, tío, primo segundo, cuñado, suegro…)
-  ├─ lib/layout.ts               orden automático (dagre + pasadas por generación y parejas)
-  ├─ lib/graph.ts                nodos "unión" para dibujar el estilo clásico en T
-  ├─ lib/export.ts               html-to-image + jsPDF (tamaños de papel, DPI, mosaico)
-  └─ lib/themes.ts               6 diseños: Clásico, Moderno, Bosque, Pergamino, Noche, Pastel
-server/  Fastify + node-postgres + zod
-  ├─ migrations/*.sql            esquema + reglas de integridad (se aplican al arrancar)
-  └─ storage.ts                  fotos: disco local en dev, Cloudflare R2 en producción
+                Navegador
+ ┌──────────────────────────────────────────────┐
+ │  React + React Flow                          │
+ │  · lienzo, layouts, parentescos, exportación │
+ │  · recorte y compresión de fotos             │
+ └──────────────┬───────────────────────────────┘
+                │ HTTPS (JSON) · cookie de sesión · SSE
+ ┌──────────────▼───────────────────────────────┐
+ │  Fastify (un solo servicio)                  │
+ │  · autenticación, autorización por árbol     │
+ │  · validación, transacciones                 │
+ │  · sirve también el frontend compilado       │
+ └───────┬──────────────────────────┬───────────┘
+         │                          │
+   PostgreSQL 16              Cloudflare R2
+   datos + reglas + NOTIFY    fotos (WebP)
 ```
 
-### Modelo de datos (PostgreSQL)
+El frontend y la API se publican desde **un único servicio y un único origen**. Eso abarata el hosting, simplifica el despliegue y elimina la necesidad de CORS para la API.
 
-Sólo se guardan relaciones **primarias**; todo lo demás se calcula:
+## Decisiones técnicas destacadas
 
-- `persons` — datos de cada persona (fechas con precisión año/mes/día: "1950" es válido).
-- `parent_child (parent_id, child_id, kind)` — biológico, adoptivo, padrastro, acogida.
-- `partnerships (person_a, person_b, kind)` — casados, pareja, divorciados, separados, viudez.
+**Solo se almacenan relaciones primarias.**
+La base de datos guarda únicamente *padre→hijo* (con tipo: biológico, adoptivo, padrastro o acogida) y *pareja* (con estado). Abuelos, tíos, primos o cuñados **se derivan** buscando el ancestro común más cercano y contando generaciones hacia arriba y hacia abajo. Así ningún parentesco puede quedar desincronizado.
 
-Abuelos, tíos, primos, cuñados, suegros, etc. **no se almacenan**: se derivan, así nunca quedan inconsistentes.
+**Nodos de "unión" para el dibujo clásico.**
+Cada pareja tiene un nodo invisible en su punto medio, del que bajan las líneas hacia los hijos. Así se obtiene la forma en "T" característica de los árboles genealógicos. El nodo se recalcula mientras se arrastra a cualquiera de los dos.
 
-La base de datos garantiza la integridad aunque la app tenga un bug:
+**Layout propio sobre dagre.**
+dagre propone el orden horizontal y, encima, varias pasadas propias:
+- asignación de generaciones,
+- parejas tratadas como un bloque,
+- cada persona del lado de sus propios padres,
+- iteraciones que centran a los hijos bajo los padres y a los padres sobre los hijos.
 
-- No hay ciclos (nadie puede ser su propio ancestro) — trigger con CTE recursivo.
-- Máximo 2 padres biológicos (para más, usa adoptivo/padrastro).
-- Nadie puede ser pareja de su padre/hijo, ni su propio padre.
-- Las relaciones nunca cruzan árboles (FKs compuestas `(id, tree_id)`).
-- Las parejas no se duplican (A,B)=(B,A) (orden canónico + UNIQUE).
-- Fallecimiento ≥ nacimiento; color en formato `#RRGGBB`.
-- Crear persona + sus vínculos ocurre en **una transacción**: si una regla falla, no se crea nada.
+Los modos "Árbol" y "Radial" transforman ese resultado (inversión vertical y conversión a coordenadas polares) y dibujan las ramas como polígonos de grosor variable.
 
-## Cuentas, permisos y privacidad
+**Historial de comandos con identificadores estables.**
+Cada acción registra cómo deshacerse y rehacerse. Los borrados guardan una instantánea que el servidor reinserta **con los mismos UUID**, de modo que el resto del historial sigue siendo válido.
 
-- **Registro obligatorio** para crear o editar árboles. Autenticación propia (sin servicios externos): los datos de usuarios viven en tu Postgres.
-- Contraseñas con **scrypt** (`node:crypto`), sal aleatoria por usuario. El login tarda lo mismo aunque el correo no exista (no se pueden "adivinar" cuentas) y tiene **límite de 10 intentos / 15 min por IP**.
-- **Sesión en cookie `HttpOnly; Secure; SameSite=Lax`** (30 días). En la base sólo se guarda el hash SHA-256 del token; cerrar sesión la invalida en el servidor. Las vencidas se limpian cada hora.
-- **Roles por árbol** (`tree_members`): `owner` (uno por árbol, lo garantiza un índice único) y `editor`. El servidor revisa el permiso en **cada** ruta `/api/trees/:treeId/...`; sin acceso responde 404 (no revela que el árbol existe). Sólo el dueño borra el árbol y gestiona quién tiene acceso; un editor puede salirse.
-- **Invitar por correo**: si la persona ya tiene cuenta, obtiene acceso al instante; si no, queda una invitación pendiente que se aplica sola al registrarse con ese correo. *La app no envía correos*: avísale tú.
-- **Enlace público de sólo lectura** (`/?ver=<token>`): token aleatorio de 144 bits, se puede desactivar o regenerar (el anterior deja de funcionar). No incluye las **notas privadas**. Permite ver, rastrear y exportar; no editar.
-- **Migración de datos previos**: los árboles creados antes de existir cuentas pasan al **primer usuario que se registre**.
-- **Fotos**: se guardan con nombre aleatorio (UUID) en R2 público. Nadie puede listarlas ni adivinar su URL, pero quien tenga la URL exacta de una foto puede verla. Es el equilibrio habitual (igual que las fotos de WhatsApp Web/Google Photos compartidas): servirlas con control de acceso obligaría a pasar cada imagen por el servidor (más lento y con costo de tráfico).
+**Colaboración con Server-Sent Events + PostgreSQL `LISTEN/NOTIFY`.**
+- Cada cambio confirmado emite una notificación en la base; el servidor la reenvía a las pestañas abiertas de ese árbol.
+- La pestaña que originó el cambio se identifica (`X-Client-Id`) y no se recarga a sí misma.
+- El diseño funciona aunque se ejecuten varias réplicas del servidor.
 
-## Colaboración en vivo
+**Fotos procesadas en el cliente.**
+El recorte y la compresión ocurren en el navegador, así que el servidor no necesita dependencias nativas de imagen y el almacenamiento crece muy despacio. Cada subida queda registrada, y un proceso periódico borra las fotos que nadie usa tras un periodo de gracia (que permite deshacer).
 
-Cuando otro editor cambia algo, tu pantalla se actualiza sola (y ves sus iniciales arriba, "en línea").
+**Guardado diferido del diseño.**
+Los cambios de diseño se aplican al instante en pantalla y se guardan en el servidor 400 ms después del último. Arrastrar un selector de color no genera cientos de peticiones.
 
-- Cada pestaña abre un canal **SSE** (Server-Sent Events): una conexión HTTP que queda abierta y por la que el servidor avisa.
-- Cada cambio exitoso hace `NOTIFY` en PostgreSQL; el servidor escucha con `LISTEN` y reenvía el aviso. Funciona aunque algún día corras varias copias del servidor.
-- La pestaña que hizo el cambio no se recarga a sí misma (cada pestaña tiene un `X-Client-Id`). Mientras arrastras una tarjeta, los cambios ajenos esperan a que la sueltes.
-- Si dos personas editan **el mismo campo** a la vez, gana el último en guardar.
+## Modelo de datos e integridad
 
-## GEDCOM (importar / exportar)
+Las reglas genealógicas viven **en la propia base de datos**, mediante restricciones y *triggers*, de modo que se cumplen aunque la aplicación tuviera un error:
 
-- **Importar**: en el inicio, *Importar GEDCOM* (archivos `.ged` de Ancestry, MyHeritage, FamilySearch, Gramps…). Se lee en el navegador y se crea el árbol completo en una transacción. Fechas aproximadas (`ABT 1930`, `BEF 1900`) se guardan como año y el texto original va a las notas; relaciones que violan las reglas (ciclos, >2 padres biológicos) se corrigen o se omiten con aviso.
-- **Exportar**: *Exportar → GEDCOM*. Formato 5.5.1 en UTF-8: nombres, sexo, fechas, lugares, notas, parejas (casados/divorciados), filiación adoptiva/de acogida y fotos como enlaces. Sirve también como **respaldo** legible por cualquier programa de genealogía.
+- **Sin ciclos:** nadie puede ser su propio ancestro (CTE recursiva en un *trigger*).
+- **Máximo dos progenitores biológicos** por persona.
+- **Coherencia de vínculos:** un progenitor y su hijo no pueden ser pareja, y nadie puede ser su propio padre.
+- **Aislamiento entre árboles:** las relaciones nunca cruzan de un árbol a otro (claves foráneas compuestas `(id, tree_id)`).
+- **Parejas sin duplicados** gracias a un orden canónico más una restricción `UNIQUE`.
+- **Validaciones de datos:** fechas coherentes (fallecimiento posterior al nacimiento), con precisión de año, mes o día.
+- **Exactamente un dueño por árbol** (índice único parcial).
+- **Operaciones compuestas transaccionales:** crear una persona con sus vínculos o importar un GEDCOM completo es todo o nada.
 
-## Fotos: ciclo de vida
+Las migraciones SQL se versionan en `server/migrations/` y se aplican automáticamente al arrancar.
 
-1. Se recortan y comprimen en el navegador (WebP 600×600, ~50 KB) y se suben con nombre aleatorio (UUID).
-2. Cada subida queda registrada en la tabla `uploads`.
-3. **Limpieza automática** cada hora: se borran (del disco o de R2) las fotos que ninguna persona usa desde hace más de `PHOTO_GRACE_DAYS` días (7 por defecto): fotos reemplazadas, de personas o árboles eliminados. El margen existe para que *deshacer* pueda recuperar una foto.
-4. Límite de 120 subidas por hora por IP.
+## Seguridad y privacidad
 
-## Despliegue: qué usar y de dónde sale cada cosa
+- **Autenticación propia**, sin proveedores externos. Las contraseñas se derivan con **scrypt** y sal individual.
+- **Sesiones:**
+  - viajan en una cookie `HttpOnly; Secure; SameSite=Lax`;
+  - en la base solo se guarda el hash SHA-256 del token;
+  - cerrar sesión o bloquear a un usuario las invalida de inmediato.
+- **Protección del inicio de sesión:**
+  - límite de intentos por IP;
+  - tiempo de respuesta constante, para que no se pueda averiguar qué correos tienen cuenta.
+- **Registro solo por invitación:**
+  - enlaces de un solo uso, con caducidad y, opcionalmente, ligados a un correo;
+  - se consumen de forma atómica y solo se almacena su hash.
+- **Autorización en el servidor** en cada petición a un árbol. Sin permiso, la respuesta es `404`, para no revelar que el árbol existe.
+- **Enlaces públicos:**
+  - tokens aleatorios de 144 bits, revocables;
+  - excluyen las notas privadas.
+- **Fotos:** se guardan con nombres aleatorios (UUID), que no se pueden listar ni adivinar.
+- Los secretos se gestionan únicamente mediante variables de entorno (`.env` está excluido del repositorio).
 
-| Necesitas | Servicio | Dónde se consigue | Costo aprox.* |
-|---|---|---|---|
-| Servidor (app + API) | **Railway** | railway.com → cuenta con GitHub | Plan Hobby ~5 USD/mes (incluye uso) |
-| Base de datos | **PostgreSQL de Railway** | Dentro del mismo proyecto de Railway | Entra en el uso del plan para algo pequeño |
-| Fotos | **Cloudflare R2** | dash.cloudflare.com → R2 | Gratis hasta 10 GB; sin cobro por descargas |
-| Dominio (ej. `raicesfamilia.com`) | **Cloudflare Registrar** | dash.cloudflare.com → Domain Registration | Precio de costo (~10–12 USD/año un `.com`) |
-| HTTPS | Railway + Cloudflare | Automático | Gratis |
-| Repositorio | **GitHub** (privado) | github.com | Gratis |
+## Ejecutar en local
 
-\*Orientativo; revisa precios actuales.
+**Requisitos:** Node.js 20+ y Docker.
 
-**¿Por qué el dominio en Cloudflare?** Porque R2 necesita un dominio propio administrado en Cloudflare para servir las fotos en producción (`fotos.tudominio.com`); la URL `r2.dev` que da Cloudflare es sólo para pruebas y tiene límites. Tener el dominio y el DNS en Cloudflare deja todo en un lugar: `tudominio.com` → Railway y `fotos.tudominio.com` → R2.
+```bash
+git clone <url-del-repositorio>
+cd arbol_familiar
+npm install
+cp server/.env.example server/.env
+npm run db:up      # PostgreSQL 16 en Docker (puerto 5440)
+npm run dev        # API en :3001 y aplicación en http://localhost:5173
+```
 
-### 1. GitHub
-1. Crea un repositorio **privado** y sube el proyecto (`git push`). El `.gitignore` ya excluye `.env`, fotos, compilados y respaldos.
-2. Antes del primer push revisa qué se subirá: `git add --dry-run .` (no debe aparecer ningún `.env` ni `server/uploads`).
+La primera cuenta que se registra en una base vacía es la de **administrador**. A partir de ahí, las nuevas cuentas se crean con enlaces de invitación desde el panel de administración.
 
-### 2. Cloudflare: dominio
-1. Crea cuenta en dash.cloudflare.com → *Domain Registration → Register Domains* y compra el dominio (o, si ya tienes uno en otro lado, *Add a site* y cambia los nameservers a los de Cloudflare).
+En desarrollo, las fotos se guardan en `server/uploads/`; si se definen las variables de Cloudflare R2, se usan automáticamente.
 
-### 3. Cloudflare: R2 (fotos)
-1. En el panel: **R2 Object Storage**. La primera vez pide activar R2 (puede pedir un método de pago aunque uses sólo la capa gratuita).
-2. **Create bucket** → nombre `arbol-fotos`, ubicación automática.
-3. Bucket → **Settings → Custom Domains → Connect Domain** → `fotos.tudominio.com` (Cloudflare crea el DNS solo). Esa es tu `R2_PUBLIC_URL` = `https://fotos.tudominio.com`.
-4. Bucket → **Settings → CORS Policy → Add** (necesario para que las fotos salgan en los PDF/PNG):
+### Scripts útiles
+
+| Comando | Descripción |
+|---|---|
+| `npm run dev` | API y frontend en modo desarrollo |
+| `npm run build` | Compila frontend y backend |
+| `npm start` | Ejecuta la versión compilada (sirve API y frontend) |
+| `npm run db:up` / `db:down` | Levanta o detiene PostgreSQL en Docker |
+| `npm run r2:check -w server -- https://tu-dominio.com` | Verifica credenciales, escritura, lectura pública y CORS de R2 |
+| `npm run r2:migrate -w server [-- --apply]` | Sube a R2 las fotos locales y actualiza sus enlaces |
+
+## Despliegue en producción
+
+La configuración propuesta prioriza el **bajo coste**:
+
+| Componente | Servicio |
+|---|---|
+| Aplicación (API + frontend) | **Railway**, a partir del `Dockerfile` incluido |
+| Base de datos | **PostgreSQL de Railway** (red privada) |
+| Fotos | **Cloudflare R2** (capa gratuita de 10 GB, sin coste de salida) |
+| Dominio y DNS | **Cloudflare** |
+
+### 1. Cloudflare R2
+1. Crea un bucket y conéctale un subdominio propio (por ejemplo `fotos.tudominio.com`).
+2. Añade una política CORS que permita `GET` desde el dominio de la aplicación (necesaria para incluir las fotos en las exportaciones):
    ```json
    [{ "AllowedOrigins": ["https://tudominio.com"], "AllowedMethods": ["GET", "HEAD"], "AllowedHeaders": ["*"], "MaxAgeSeconds": 86400 }]
    ```
-5. R2 → **Manage R2 API Tokens → Create API Token**: permiso **Object Read & Write**, sólo para el bucket `arbol-fotos`. Copia:
-   - *Access Key ID* → `R2_ACCESS_KEY_ID`
-   - *Secret Access Key* → `R2_SECRET_ACCESS_KEY` (**se muestra una sola vez**; guárdala en tu gestor de contraseñas, nunca en git)
-   - El *Account ID* (aparece en la página de R2 y en la URL del endpoint `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`) → `R2_ACCOUNT_ID`
-6. Prueba desde tu computadora poniendo esas variables en `server/.env`:
-   ```bash
-   npm run r2:check -w server -- https://tudominio.com
-   ```
-   Revisa credenciales, escritura, lectura pública, CORS y borrado.
+3. Crea un token de API con permiso **Object Read & Write** limitado a ese bucket.
+4. Comprueba la configuración con `npm run r2:check`.
 
-### 4. Railway (servidor + base de datos)
-1. railway.com → **New Project → Deploy from GitHub repo** → elige el repositorio. Detecta el `Dockerfile` y `railway.json`.
-2. En el proyecto: **+ New → Database → PostgreSQL**.
-3. Servicio de la app → **Variables**:
+### 2. Railway
+1. Crea un proyecto desde el repositorio de GitHub; Railway detecta el `Dockerfile` y `railway.json`.
+2. Añade una base de datos PostgreSQL al proyecto.
+3. Define las variables de entorno del servicio:
    ```
    DATABASE_URL=${{Postgres.DATABASE_URL}}
-   R2_ACCOUNT_ID=...
-   R2_ACCESS_KEY_ID=...
-   R2_SECRET_ACCESS_KEY=...
-   R2_BUCKET=arbol-fotos
+   R2_ACCOUNT_ID=…
+   R2_ACCESS_KEY_ID=…
+   R2_SECRET_ACCESS_KEY=…
+   R2_BUCKET=…
    R2_PUBLIC_URL=https://fotos.tudominio.com
    ```
-   (`NODE_ENV=production` ya viene en el Dockerfile: cookies `Secure`, sin CORS.)
-4. **Settings → Networking → Custom Domain** → `tudominio.com`. Railway te da un registro CNAME; créalo en Cloudflare → DNS. (Si dejas la nube naranja activada, en Cloudflare → SSL/TLS usa modo **Full**.)
-5. Al arrancar, el servidor aplica las migraciones y comprueba R2; si algo falla, lo dice en los *Logs* de Railway.
-6. **Regístrate tú primero**: el primer usuario recibe los árboles que ya existieran.
-7. Postgres → **Backups**: actívalos. Y exporta de vez en cuando un GEDCOM como respaldo propio.
+4. Asocia el dominio personalizado (registro CNAME en Cloudflare).
+5. Activa las copias de seguridad de PostgreSQL.
 
-### 5. (Opcional) Llevar tus datos locales a producción
-```bash
-# 1) Copiar la base local a Railway (usa la "Public Network URL" del Postgres de Railway)
-docker compose exec -T db pg_dump -U arbol --no-owner --clean --if-exists arbol > respaldo.sql
-psql "postgresql://...railway..." -f respaldo.sql
+Al arrancar, el servidor aplica las migraciones y verifica el acceso a R2. Si la configuración está incompleta, se detiene con un mensaje claro en lugar de fallar más tarde.
 
-# 2) Subir las fotos locales a R2 y actualizar sus enlaces en esa base
-#    (en server/.env: DATABASE_URL = la URL pública de Railway + las R2_*)
-npm run r2:migrate -w server             # simulación: muestra qué haría
-npm run r2:migrate -w server -- --apply  # lo hace
+### Variables de entorno
+
+| Variable | Obligatoria | Descripción |
+|---|---|---|
+| `DATABASE_URL` | Sí | Cadena de conexión a PostgreSQL |
+| `PORT` | No | Puerto HTTP (por defecto `3001`) |
+| `DATABASE_SSL` | No | `true` si el proveedor exige SSL |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL` | En producción | Almacenamiento de fotos en Cloudflare R2 |
+| `PHOTO_GRACE_DAYS` | No | Días que se conserva una foto sin uso antes de borrarla (por defecto `7`) |
+
+## Estructura del proyecto
+
 ```
-`respaldo.sql` contiene datos personales: el `.gitignore` ignora `respaldo*.sql`, `backup*.sql` y `dump*.sql`, pero lo más seguro es guardarlo fuera del proyecto o borrarlo al terminar.
+├── client/                     Frontend (React + Vite)
+│   └── src/
+│       ├── components/         Lienzo, nodos, ramas, paneles, diálogos, administración
+│       ├── lib/
+│       │   ├── kinship.ts      Cálculo de parentescos
+│       │   ├── layout.ts       Layout por generaciones, árbol y radial
+│       │   ├── graph.ts        Construcción del grafo y nodos de unión
+│       │   ├── branch.ts       Geometría de ramas con grosor variable
+│       │   ├── export.ts       PDF / PNG / SVG / mosaico
+│       │   ├── gedcom.ts       Importación y exportación GEDCOM
+│       │   └── themes.ts       Diseños, personalización y contraste
+│       └── store.ts            Estado global e historial deshacer/rehacer
+├── server/                     Backend (Fastify)
+│   ├── migrations/             Esquema SQL versionado
+│   └── src/
+│       ├── routes.ts           Árboles, personas, vínculos, fotos, importación
+│       ├── accountRoutes.ts    Registro, sesiones, compartir, enlaces públicos
+│       ├── adminRoutes.ts      Administración y diseños de usuario
+│       ├── realtime.ts         Tiempo real (SSE + LISTEN/NOTIFY)
+│       ├── auth.ts             Contraseñas, sesiones y permisos
+│       └── storage.ts          Disco local / Cloudflare R2 y limpieza de fotos
+├── Dockerfile                  Imagen de producción (multi-etapa)
+├── docker-compose.yml          PostgreSQL para desarrollo
+└── railway.json                Configuración de despliegue
+```
 
-## Próximos pasos sugeridos
+## Hoja de ruta
 
-- **Recuperar contraseña y verificar correo**: requiere enviar emails (p. ej. Resend, plan gratis ~3 000/mes). Hoy, si alguien olvida su contraseña, hay que resetearla a mano en la base.
-- Opción de ocultar datos de **personas vivas** en el enlace público.
-- Historial de deshacer persistente (hoy vive en la sesión del navegador; se pierde al recargar).
-- Vista "ancestros de X" / "descendientes de X" para árboles muy grandes.
+- Recuperación de contraseña y verificación de correo.
+- Opción de ocultar los datos de personas vivas en el enlace público.
+- Historial de deshacer persistente entre sesiones.
+- Vistas filtradas ("ancestros de…" / "descendientes de…") para árboles muy grandes.
+- Pruebas automatizadas y CI.
+
+## Licencia
+
+Distribuido bajo la licencia [MIT](LICENSE). © 2026 Mario Gaytan.

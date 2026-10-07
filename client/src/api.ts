@@ -1,4 +1,7 @@
-import type { ParentChild, ParentKind, Partnership, PartnerKind, Person, SharingInfo, Tree, TreeData, User } from './types';
+import type {
+  AdminStats, AdminUser, ParentChild, ParentKind, Partnership, PartnerKind, Person, RegistrationInvite, SharingInfo, Tree,
+  TreeData, TreeSettings, User, UserTheme,
+} from './types';
 
 /** Identifica esta pestaña: el servidor no le reenvía sus propios cambios. */
 export const CLIENT_ID = crypto.randomUUID();
@@ -28,8 +31,29 @@ export interface Snapshot {
 
 export const api = {
   me: () => req<{ user: User }>('GET', '/api/auth/me'),
-  register: (name: string, email: string, password: string) =>
-    req<{ user: User }>('POST', '/api/auth/register', { name, email, password }),
+  register: (name: string, email: string, password: string, invite?: string) =>
+    req<{ user: User }>('POST', '/api/auth/register', { name, email, password, invite }),
+  setupStatus: () => req<{ needsSetup: boolean }>('GET', '/api/auth/setup'),
+  checkInvite: (token: string) =>
+    req<{ email: string | null; expiresAt: string }>('GET', `/api/auth/invite/${encodeURIComponent(token)}`),
+
+  admin: {
+    stats: () => req<AdminStats>('GET', '/api/admin/stats'),
+    users: () => req<AdminUser[]>('GET', '/api/admin/users'),
+    updateUser: (id: string, patch: { status?: 'active' | 'blocked'; isAdmin?: boolean }) =>
+      req<AdminUser>('PATCH', `/api/admin/users/${id}`, patch),
+    invites: () => req<RegistrationInvite[]>('GET', '/api/admin/invites'),
+    createInvite: (body: { email?: string; note?: string; hours: number }) =>
+      req<{ invite: RegistrationInvite; token: string }>('POST', '/api/admin/invites', body),
+    revokeInvite: (id: string) => req('DELETE', `/api/admin/invites/${id}`),
+  },
+
+  themes: {
+    list: () => req<UserTheme[]>('GET', '/api/me/themes'),
+    create: (name: string, theme: TreeSettings) => req<UserTheme>('POST', '/api/me/themes', { name, theme }),
+    update: (id: string, patch: { name?: string; theme?: TreeSettings }) => req<UserTheme>('PATCH', `/api/me/themes/${id}`, patch),
+    remove: (id: string) => req('DELETE', `/api/me/themes/${id}`),
+  },
   login: (email: string, password: string) => req<{ user: User }>('POST', '/api/auth/login', { email, password }),
   logout: () => req('POST', '/api/auth/logout'),
 

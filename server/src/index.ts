@@ -14,6 +14,7 @@ import { pool } from './db.js';
 import { registerRoutes } from './routes.js';
 import { registerAccountRoutes } from './accountRoutes.js';
 import { registerRealtime } from './realtime.js';
+import { registerAdminRoutes } from './adminRoutes.js';
 import { checkR2, LOCAL_UPLOAD_DIR, purgeOrphanPhotos, usingR2 } from './storage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,6 +30,7 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   trees_name_ck: 'El árbol necesita un nombre',
   users_email_uq: 'Ya existe una cuenta con ese correo',
   users_email_ck: 'Correo inválido',
+  user_themes_name_ck: 'El nombre del diseño debe tener entre 1 y 60 caracteres',
 };
 
 // trustProxy: detrás del proxy de Railway, para ver la IP real (límite de intentos de login)
@@ -69,6 +71,7 @@ app.setErrorHandler((err: FastifyError & { constraint?: string }, req, reply) =>
 
 await registerAccountRoutes(app);
 await registerRealtime(app);
+await registerAdminRoutes(app);
 await registerRoutes(app);
 
 // Frontend compilado (producción): un solo servicio sirve API + app
