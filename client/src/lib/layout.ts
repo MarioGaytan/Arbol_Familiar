@@ -3,7 +3,8 @@ import type { LayoutMode, ParentChild, Partnership, Person } from '../types';
 import { computeFamilies, NODE_H, NODE_W } from './graph';
 
 const GAP_X = 44;
-export const ROW_H = NODE_H + 120;
+// Hueco entre generaciones: con menos, las ramas hacia muchos hermanos quedan casi horizontales
+export const ROW_H = NODE_H + 150;
 
 function pushTo<K, V>(m: Map<K, V[]>, k: K, v: V) {
   if (!m.has(k)) m.set(k, []);

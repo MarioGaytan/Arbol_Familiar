@@ -9,6 +9,8 @@ Aplicación web para crear, organizar, compartir e imprimir árboles familiares 
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL_16-4169E1?logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
 ![Cloudflare R2](https://img.shields.io/badge/Cloudflare_R2-F38020?logo=cloudflare&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-6E9F18?logo=vitest&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)
 
 ![Editor con la ficha de una persona abierta](docs/screenshots/01-editor.webp)
 
@@ -46,6 +48,7 @@ Aplicación web para crear, organizar, compartir e imprimir árboles familiares 
 - [Seguridad y privacidad](#seguridad-y-privacidad)
 - [Protección de datos personales (México)](#protección-de-datos-personales-méxico)
 - [Ejecutar en local](#ejecutar-en-local)
+- [Pruebas y CI](#pruebas-y-ci)
 - [Despliegue en producción](#despliegue-en-producción)
 - [Estructura del proyecto](#estructura-del-proyecto)
 - [Hoja de ruta](#hoja-de-ruta)
@@ -254,10 +257,29 @@ En desarrollo, las fotos se guardan en `server/uploads/`; si se definen las vari
 |---|---|
 | `npm run dev` | API y frontend en modo desarrollo |
 | `npm run build` | Compila frontend y backend |
+| `npm test` | Pruebas del cliente y del servidor (ver [Pruebas y CI](#pruebas-y-ci)) |
+| `npm run typecheck` | Revisa los tipos de TypeScript en cliente y servidor |
 | `npm start` | Ejecuta la versión compilada (sirve API y frontend) |
 | `npm run db:up` / `db:down` | Levanta o detiene PostgreSQL en Docker |
 | `npm run r2:check -w server -- https://tu-dominio.com` | Verifica credenciales, escritura, lectura pública y CORS de R2 |
 | `npm run r2:migrate -w server [-- --apply]` | Sube a R2 las fotos locales y actualiza sus enlaces |
+
+## Pruebas y CI
+
+```bash
+npm run db:up   # las pruebas del servidor usan el mismo PostgreSQL de Docker
+npm test
+```
+
+| Dónde | Qué se prueba | Cómo |
+|---|---|---|
+| `client/src/lib/*.test.ts` | Parentescos (sangre y políticos, medios hermanos, padrastros), fechas parciales y edades, GEDCOM de ida y vuelta, acomodo sin tarjetas encimadas en los tres modos | Vitest, funciones puras con una familia inventada (`client/src/test/family.ts`) |
+| `server/test/integrity.test.ts` | Reglas que viven en PostgreSQL: sin ciclos, máximo dos padres biológicos, nada entre árboles distintos, fechas coherentes, importación todo o nada | La API real con `app.inject()` (sin abrir puertos) contra una base de datos real |
+| `server/test/access.test.ts` | Registro sólo por invitación de un solo uso, roles, bloqueo de cuentas, 404 a quien no es miembro, consentimiento versionado (428), enlace público que oculta a las personas vivas | Igual |
+
+Las pruebas del servidor **borran y vuelven a crear** la base `arbol_test` en cada corrida, por eso se niegan a correr si el nombre de la base (`TEST_DATABASE_URL`) no termina en `_test`: es imposible que toquen la base de desarrollo por accidente.
+
+En cada push y pull request, [GitHub Actions](.github/workflows/ci.yml) levanta un PostgreSQL 16 de usar y tirar, revisa tipos, corre ambas suites, compila y construye la imagen Docker.
 
 ## Despliegue en producción
 
@@ -325,17 +347,22 @@ Al arrancar, el servidor aplica las migraciones y verifica el acceso a R2. Si la
 │       │   ├── branch.ts       Geometría de ramas con grosor variable
 │       │   ├── export.ts       PDF / PNG / SVG / mosaico
 │       │   ├── gedcom.ts       Importación y exportación GEDCOM
-│       │   └── themes.ts       Diseños, personalización y contraste
+│       │   ├── themes.ts       Diseños, personalización y contraste
+│       │   └── *.test.ts       Pruebas unitarias (Vitest)
 │       └── store.ts            Estado global e historial deshacer/rehacer
 ├── server/                     Backend (Fastify)
 │   ├── migrations/             Esquema SQL versionado
+│   ├── test/               Pruebas de integración contra PostgreSQL
 │   └── src/
+│       ├── app.ts              Construye la app (seguridad, plugins, rutas)
+│       ├── index.ts            Arranque: migraciones, limpiezas y puerto
 │       ├── routes.ts           Árboles, personas, vínculos, fotos, importación
 │       ├── accountRoutes.ts    Registro, sesiones, compartir, enlaces públicos
 │       ├── adminRoutes.ts      Administración y diseños de usuario
 │       ├── realtime.ts         Tiempo real (SSE + LISTEN/NOTIFY)
 │       ├── auth.ts             Contraseñas, sesiones y permisos
 │       └── storage.ts          Disco local / Cloudflare R2 y limpieza de fotos
+├── .github/workflows/ci.yml   Integración continua
 ├── Dockerfile                  Imagen de producción (multi-etapa)
 ├── docker-compose.yml          PostgreSQL para desarrollo
 └── railway.json                Configuración de despliegue
@@ -346,8 +373,9 @@ Al arrancar, el servidor aplica las migraciones y verifica el acceso a R2. Si la
 - Recuperación de contraseña y verificación de correo.
 - Historial de deshacer persistente entre sesiones.
 - Vistas filtradas ("ancestros de…" / "descendientes de…") para árboles muy grandes.
-- Pruebas automatizadas y CI.
 
 ## Licencia
 
 Distribuido bajo la licencia [MIT](LICENSE). © 2026 Mario Gaytan.
+
+El lienzo usa [React Flow](https://reactflow.dev) (MIT, © webkid GmbH); su atribución se muestra en el lienzo, como piden sus autores para proyectos sin la suscripción Pro.

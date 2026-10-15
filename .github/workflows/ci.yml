@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tipos, pruebas y compilación
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # PostgreSQL de usar y tirar: las pruebas del servidor crean ahí la base arbol_test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: arbol
+          POSTGRES_PASSWORD: arbol
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U arbol"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgres://arbol:arbol@localhost:5432/arbol_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Revisar tipos (cliente y servidor)
+        run: npm run typecheck
+
+      - name: Pruebas del cliente (parentescos, fechas, GEDCOM, acomodo)
+        run: npm run test -w client
+
+      - name: Pruebas del servidor (integridad en PostgreSQL, permisos, privacidad)
+        run: npm run test -w server
+
+      - name: Compilar para producción
+        run: npm run build
+
+  docker:
+    name: Imagen Docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construir la imagen (sin publicarla)
+        run: docker build -t raices:ci .

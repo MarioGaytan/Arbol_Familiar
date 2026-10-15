@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { useInternalNode, type EdgeProps, type InternalNode, type Node } from '@xyflow/react';
 import type { LinkEdge } from '../lib/graph';
-import { line, polyline, radialCurve, taper, verticalCurve, type Pt } from '../lib/branch';
+import { growCurve, line, polyline, radialCurve, taper, type Pt } from '../lib/branch';
 
 const centerOf = (n: InternalNode<Node>): Pt => ({
   x: n.internals.positionAbsolute.x + (n.measured?.width ?? n.width ?? 0) / 2,
@@ -18,7 +18,7 @@ export const BranchEdge = memo(function BranchEdge({ source, target, sourceX, so
     s = centerOf(sn);
     t = centerOf(tn);
   }
-  const pts = data?.shape === 'radial' ? radialCurve(s, t) : data?.shape === 'straight' ? line(s, t) : verticalCurve(s, t);
+  const pts = data?.shape === 'radial' ? radialCurve(s, t) : data?.shape === 'straight' ? line(s, t) : growCurve(s, t);
   const w1 = data?.w1 ?? 4;
   const w2 = data?.w2 ?? 3;
   const center = polyline(pts);

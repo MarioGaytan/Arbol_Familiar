@@ -3,7 +3,8 @@ import { AlertTriangle, Brush, Check, Eye, LayoutTemplate, Pencil, RotateCcw, Sa
 import { api } from '../api';
 import { useEditor } from '../store';
 import { COLOR_GROUPS, contrast, FONTS, resolveTheme, snapshotStyle, STYLE_KEYS, THEMES, type ColorKey } from '../lib/themes';
-import type { EdgeStyle, LayoutMode, Pattern, PhotoShape, TreeSettings, UserTheme } from '../types';
+import type { EdgeStyle, Person, LayoutMode, Pattern, PhotoShape, TreeSettings, UserTheme } from '../types';
+import { initials, lifespan } from '../lib/format';
 import { PanelTabs } from './PanelTabs';
 import { Section } from './Section';
 
@@ -55,18 +56,21 @@ function Swatch({ s }: { s: TreeSettings }) {
   );
 }
 
-/** Tarjeta de muestra con el diseño actual: se actualiza al instante mientras editas. */
-function LivePreview({ s, name }: { s: TreeSettings; name: string }) {
+/** Tarjeta de muestra con el diseño actual y la persona central del árbol: se actualiza al instante mientras editas. */
+function LivePreview({ s, name, person, central }: { s: TreeSettings; name: string; person: Person | null; central: boolean }) {
   const t = resolveTheme(s);
   const radius = t.photoShape === 'circle' ? '50%' : t.photoShape === 'rounded' ? '24%' : '6px';
+  const tint = person?.gender === 'male' ? t.maleTint : person?.gender === 'female' ? t.femaleTint : t.cardBg;
   return (
     <div className="theme-preview" style={{ background: t.bg }}>
-      <div className="tp-card" style={{ background: `linear-gradient(180deg, ${t.femaleTint}, ${t.cardBg} 60%)`, borderColor: t.cardBorder, borderRadius: t.radius * 0.7, color: t.text, fontFamily: t.font }}>
-        <div className="tp-photo" style={{ borderColor: t.accent, borderRadius: radius, color: t.accent, background: t.cardBg, fontFamily: t.nameFont }}>AM</div>
-        <div className="tp-name" style={{ fontFamily: t.nameFont }}>Andrea</div>
-        <div className="tp-sub">Montes Arriaga</div>
-        <div className="tp-sub" style={{ color: t.muted }}>n. 1978</div>
-        <div className="tp-rel" style={{ background: t.accent, color: '#fff' }}>Persona central</div>
+      <div className="tp-card" style={{ background: `linear-gradient(180deg, ${tint}, ${t.cardBg} 60%)`, borderColor: t.cardBorder, borderRadius: t.radius * 0.7, color: t.text, fontFamily: t.font }}>
+        <div className="tp-photo" style={{ borderColor: t.accent, borderRadius: radius, color: t.accent, background: t.cardBg, fontFamily: t.nameFont }}>
+          {person?.photoUrl ? <img src={person.photoUrl} alt="" style={{ borderRadius: radius }} /> : person ? initials(person) : '?'}
+        </div>
+        <div className="tp-name" style={{ fontFamily: t.nameFont }}>{person ? person.firstName : 'Nombre'}</div>
+        <div className="tp-sub">{person ? person.lastName : 'Apellidos'}</div>
+        {person && lifespan(person) && <div className="tp-sub" style={{ color: t.muted }}>{lifespan(person)}</div>}
+        {(central || !person) && <div className="tp-rel" style={{ background: t.accent, color: '#fff' }}>Persona central</div>}
       </div>
       <div className="tp-info">
         <strong>{name}</strong>
@@ -85,6 +89,8 @@ export function ThemePanel() {
   const setLayoutMode = useEditor((s) => s.setLayoutMode);
   const toast = useEditor((s) => s.toast);
   const settings = tree.theme;
+  const persons = useEditor((s) => s.persons);
+  const previewPerson = (tree.rootPersonId && persons[tree.rootPersonId]) || Object.values(persons)[0] || null;
   const t = resolveTheme(settings);
   const [mine, setMine] = useState<UserTheme[]>([]);
   const [saving, setSaving] = useState<string | null>(null); // nombre del nuevo diseño mientras se escribe
@@ -165,7 +171,7 @@ export function ThemePanel() {
     <aside className="panel">
       <PanelTabs />
       <div className="panel-body theme-panel">
-        <LivePreview s={settings} name={current ? current.name : overridden ? `${THEMES.find((x) => x.id === t.id)?.name} (personalizado)` : THEMES.find((x) => x.id === t.id)?.name ?? ''} />
+        <LivePreview s={settings} person={previewPerson} central={!!previewPerson && previewPerson.id === tree.rootPersonId} name={current ? current.name : overridden ? `${THEMES.find((x) => x.id === t.id)?.name} (personalizado)` : THEMES.find((x) => x.id === t.id)?.name ?? ''} />
 
         <Section id="forma" icon={<Network size={15} />} title="Forma del árbol">
           <div className="modes">

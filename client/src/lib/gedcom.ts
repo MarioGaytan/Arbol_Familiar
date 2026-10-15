@@ -37,7 +37,8 @@ export function exportGedcom(data: Snapshot, treeName: string, origin = location
   const iid = new Map(data.persons.map((p, i) => [p.id, `@I${i + 1}@`]));
   const families = computeFamilies(data.parentChild, data.partnerships).filter((f) => f.parents.every((p) => iid.has(p)));
   const fid = new Map(families.map((f, i) => [f.id, `@F${i + 1}@`]));
-  const PEDI: Partial<Record<ParentKind, string>> = { adoptive: 'adopted', foster: 'foster' };
+  // "step" no está en 5.5.1, pero otros programas lo ignoran sin problema y así no se pierde al reimportar
+  const PEDI: Partial<Record<ParentKind, string>> = { adoptive: 'adopted', foster: 'foster', step: 'step' };
 
   const L: string[] = [
     '0 HEAD',
@@ -89,6 +90,8 @@ export function exportGedcom(data: Snapshot, treeName: string, origin = location
     if (kind && kind !== 'partner') L.push('1 MARR');
     if (kind === 'divorced') L.push('1 DIV');
     if (kind === 'separated') L.push('1 EVEN', '2 TYPE Separación');
+    // Viudez y separación no tienen etiqueta estándar: _STAT (propia, empieza con "_") permite recuperarlas al importar
+    if (kind === 'widowed' || kind === 'separated') L.push(`1 _STAT ${kind}`);
     for (const c of f.children) L.push(`1 CHIL ${iid.get(c.id)}`);
   }
   L.push('0 TRLR');
@@ -125,6 +128,17 @@ function parseTree(text: string): Node[] {
 }
 
 const child = (n: Node | undefined, tag: string) => n?.children.find((c) => c.tag === tag);
+
+const STATUS: PartnerKind[] = ['married', 'partner', 'divorced', 'separated', 'widowed'];
+
+/** Tipo de pareja de una familia GEDCOM: _STAT (exportado por Raíces) o, si no, DIV / separación / MARR. */
+function partnerKind(fam: Node): PartnerKind {
+  const stat = child(fam, '_STAT')?.value.trim().toLowerCase() as PartnerKind | undefined;
+  if (stat && STATUS.includes(stat)) return stat;
+  if (child(fam, 'DIV')) return 'divorced';
+  if (fam.children.some((c) => c.tag === 'EVEN' && /separ/i.test(child(c, 'TYPE')?.value ?? ''))) return 'separated';
+  return child(fam, 'MARR') ? 'married' : 'partner';
+}
 const children = (n: Node, tag: string) => n.children.filter((c) => c.tag === tag);
 
 /** "ABT 12 MAR 1950" → { date: "1950-03-12", approx: true } */
@@ -242,8 +256,7 @@ export function parseGedcom(buffer: ArrayBuffer, fileName: string): ImportResult
       const key = [...parents].sort().join('|');
       if (!pairs.has(key) && parents[0] !== parents[1]) {
         pairs.add(key);
-        const kind: PartnerKind = child(f, 'DIV') ? 'divorced' : child(f, 'MARR') ? 'married' : 'partner';
-        partnerships.push({ id: crypto.randomUUID(), personA: parents[0], personB: parents[1], kind });
+        partnerships.push({ id: crypto.randomUUID(), personA: parents[0], personB: parents[1], kind: partnerKind(f) });
       }
     }
     for (const c of children(f, 'CHIL')) {

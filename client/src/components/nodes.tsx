@@ -1,10 +1,16 @@
 import { memo, useState, type CSSProperties, type DragEvent } from 'react';
-import { Handle, NodeToolbar, Position, type NodeProps } from '@xyflow/react';
+import { Handle, NodeToolbar, Position, useStore, type NodeProps } from '@xyflow/react';
 import { Baby, Heart, Star, UserPlus, Users } from 'lucide-react';
-import { NODE_H, type DecorFlowNode, type PersonFlowNode, type UnionFlowNode } from '../lib/graph';
-import { taper, verticalCurve } from '../lib/branch';
+import { UNION_H, type DecorFlowNode, type PersonFlowNode, type UnionFlowNode } from '../lib/graph';
+import { cubic, line, polyline, taper, verticalCurve, type Pt } from '../lib/branch';
+import type { Limb } from '../lib/crown';
 import { ageText, initials } from '../lib/format';
 import { useEditor } from '../store';
+
+/** Por debajo de este zoom las tarjetas pasan a modo "lejos": sólo foto y nombre en grande. */
+const FAR_ZOOM = 0.5;
+/** Devuelve un booleano: los componentes sólo se vuelven a dibujar al cruzar el umbral, no en cada zoom. */
+export const useFar = () => useStore((st) => st.transform[2] < FAR_ZOOM);
 
 export const PersonNode = memo(function PersonNode({ id, data, selected }: NodeProps<PersonFlowNode>) {
   const { person, relation, isRoot, highlight, dim } = data;
@@ -15,6 +21,8 @@ export const PersonNode = memo(function PersonNode({ id, data, selected }: NodeP
   const showDates = useEditor((s) => s.tree?.theme.showDates ?? true);
   const showRelations = useEditor((s) => s.tree?.theme.showRelations ?? true);
   const [dropping, setDropping] = useState(false);
+  // De lejos sólo se ven foto y nombre: menos nodos en el DOM y el nombre se lee a cualquier zoom
+  const far = useFar() && !exporting;
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
@@ -39,7 +47,7 @@ export const PersonNode = memo(function PersonNode({ id, data, selected }: NodeP
 
   return (
     <>
-      <NodeToolbar isVisible={selected && !exporting && !readOnly} position={Position.Bottom} offset={14}>
+      <NodeToolbar isVisible={selected && !exporting && !readOnly && !far} position={Position.Bottom} offset={14}>
         <div className="quick-add">
           <button onClick={() => createRelative('parent', id)} title="Agregar padre o madre">
             <Users size={15} /> Padre/Madre
@@ -80,24 +88,34 @@ export const PersonNode = memo(function PersonNode({ id, data, selected }: NodeP
         )}
         <div className="avatar">
           {person.photoUrl ? (
-            <img src={person.photoUrl} alt="" draggable={false} />
+            <img src={person.photoUrl} alt="" draggable={false} loading="lazy" decoding="async" />
           ) : (
             <span>{initials(person)}</span>
           )}
         </div>
-        <div className="p-text">
-          <div className="p-name" title={[person.firstName, person.lastName].filter(Boolean).join(' ')}>
-            {person.firstName}
-          </div>
-          <div className="p-last">{person.lastName || '\u00a0'}</div>
-          {showDates && (born || died) && (
-            <div className="p-dates">
-              {born ? (died ? `${born} – ${died}` : `n. ${born}`) : `† ${died}`}
-              {ageLabel && <span className="p-age">{died ? ` · ${ageLabel}` : ` · ${ageLabel}`}</span>}
+        {far ? (
+          <div className="p-text">
+            <div className="p-name" title={[person.firstName, person.lastName].filter(Boolean).join(' ')}>
+              {person.firstName || initials(person)}
             </div>
-          )}
-        </div>
-        {showRelations && relation && <div className={`p-rel ${isRoot ? 'root' : ''}`}>{relation}</div>}
+          </div>
+        ) : (
+          <>
+            <div className="p-text">
+              <div className="p-name" title={[person.firstName, person.lastName].filter(Boolean).join(' ')}>
+                {person.firstName}
+              </div>
+              <div className="p-last">{person.lastName || ' '}</div>
+              {showDates && (born || died) && (
+                <div className="p-dates">
+                  {born ? (died ? `${born} – ${died}` : `n. ${born}`) : `† ${died}`}
+                  {ageLabel && <span className="p-age">{died ? ` · ${ageLabel}` : ` · ${ageLabel}`}</span>}
+                </div>
+              )}
+            </div>
+            {showRelations && relation && <div className={`p-rel ${isRoot ? 'root' : ''}`}>{relation}</div>}
+          </>
+        )}
       </div>
     </>
   );
@@ -105,16 +123,35 @@ export const PersonNode = memo(function PersonNode({ id, data, selected }: NodeP
 
 export const UnionNode = memo(function UnionNode({ data }: NodeProps<UnionFlowNode>) {
   const up = data.mode === 'tree';
+  const branch = data.organic && data.mode !== 'radial';
+  const w = data.w;
+  // Rama de la pareja: gruesa y con nudo donde se unen, más fina hacia donde brotan los hijos
+  const [inY, outY] = up ? [UNION_H, 0] : [0, UNION_H];
+  const stem = branch ? taper(cubic({ x: w / 2, y: inY }, { x: w / 2, y: inY }, { x: w / 2, y: outY }, { x: w / 2, y: outY }, 12), w * 1.7, w * 0.8) : '';
   return (
     <div
-      className={`union ${data.mode === 'radial' ? 'dot' : ''} ${data.hl ? 'hl' : ''} ${data.dim ? 'dim' : ''}`}
-      style={data.mode === 'radial' ? undefined : { width: data.w, borderRadius: data.w }}
+      className={`union ${data.mode === 'radial' ? 'dot' : ''} ${branch ? 'branchy' : ''} ${data.hl ? 'hl' : ''} ${data.dim ? 'dim' : ''}`}
+      style={data.mode === 'radial' ? undefined : { width: w, borderRadius: w }}
     >
+      {branch && (
+        <svg width={w} height={UNION_H} className="union-svg">
+          <path d={stem} />
+          <ellipse cx={w / 2} cy={inY} rx={w * 1.05} ry={w * 0.75} />
+        </svg>
+      )}
       <Handle type="target" position={up ? Position.Bottom : Position.Top} id="in" isConnectable={false} className="union-h" />
       <Handle type="source" position={up ? Position.Top : Position.Bottom} id="out" isConnectable={false} className="union-h" />
     </div>
   );
 });
+
+/** Rama: sale inclinada de la bifurcación y llega vertical; las finales siguen rectas hasta la pareja. */
+function limbPath(l: Limb): Pt[] {
+  const dx = l.to.x - l.from.x;
+  const dy = l.from.y - l.to.y;
+  const curve = cubic(l.from, { x: l.from.x + dx * 0.45, y: l.from.y - dy * 0.2 }, { x: l.to.x, y: l.to.y + dy * 0.45 }, l.to);
+  return l.tip ? [...curve, ...line(l.to, l.tip).slice(1)] : curve;
+}
 
 /** Tronco con raíces (modo árbol) o anillos de crecimiento (modo radial). Sólo decorativo. */
 export const DecorNode = memo(function DecorNode({ data }: NodeProps<DecorFlowNode>) {
@@ -128,25 +165,36 @@ export const DecorNode = memo(function DecorNode({ data }: NodeProps<DecorFlowNo
       </svg>
     );
   }
-  const anchors = data.anchors!;
-  const bx = data.trunk?.x ?? anchors.reduce((s, a) => s + a.x, 0) / anchors.length;
-  const baseY = data.trunk?.baseY ?? h - 34;
-  const forkY = data.trunk?.forkY ?? Math.max(NODE_H / 2 + 60, h * 0.5);
-  const wb = Math.min(110, 46 + anchors.length * 10);
-  const trunk = verticalCurve({ x: bx, y: baseY }, { x: bx, y: forkY });
+  const { trunk, limbs } = data.crown!;
+  const bx = trunk.x;
+  const wb = trunk.w;
+  const stem = verticalCurve({ x: bx, y: trunk.baseY }, { x: bx, y: trunk.forkY });
   const roots = [-1, 1].flatMap((side) =>
-    [0.55, 1].map((k) => verticalCurve({ x: bx + side * wb * 0.2, y: baseY - 18 }, { x: bx + side * (70 + 90 * k), y: h - 4 })),
+    [0.55, 1].map((k) =>
+      verticalCurve({ x: bx + side * wb * 0.2, y: trunk.baseY - 18 }, { x: bx + side * (wb * 0.9 + 110 * k), y: h - 4 }),
+    ),
   );
   return (
     <svg width={w} height={h} className="decor">
+      {data.leaves && (
+        <g className="canopy">
+          {data.leaves.map((c, i) => <circle key={i} cx={c.x} cy={c.y} r={data.leafR} />)}
+        </g>
+      )}
       <ellipse cx={bx} cy={h - 8} rx={wb * 2.6} ry={10} className="ground" />
       {roots.map((r, i) => <path key={`r${i}`} d={taper(r, wb * 0.42, 2)} className="trunk" />)}
-      <path d={taper(trunk, wb, wb * 0.72)} className="trunk" />
-      {anchors.map((a, i) => {
-        const spread = Math.max(-1, Math.min(1, (a.x - bx) / 600));
-        const start = { x: bx + spread * wb * 0.25, y: forkY + 8 };
-        return <path key={i} d={taper(verticalCurve(start, { x: a.x, y: a.y }), Math.max(10, (wb * 0.75) / Math.sqrt(anchors.length)), Math.max(4, a.w))} className="trunk" />;
+      {limbs.map((l, i) => {
+        const pts = limbPath(l);
+        return (
+          <g key={i}>
+            <path d={taper(pts, l.w1, l.w2)} className="trunk" />
+            {/* veta de luz a lo largo de la rama: le da volumen */}
+            <path d={polyline(pts)} className="bark" strokeWidth={Math.max(1.5, ((l.w1 + l.w2) / 2) * 0.18)} transform={`translate(${-l.w2 * 0.15} 0)`} />
+          </g>
+        );
       })}
+      <path d={taper(stem, wb, wb * 0.78)} className="trunk" />
+      <path d={polyline(stem)} className="bark" strokeWidth={wb * 0.14} transform={`translate(${-wb * 0.18} 0)`} />
     </svg>
   );
 });

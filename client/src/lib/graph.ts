@@ -1,4 +1,5 @@
 import { MarkerType, type Edge, type Node } from '@xyflow/react';
+import { growCrown, type Crown } from './crown';
 import type { EdgeStyle, LayoutMode, ParentChild, ParentKind, Partnership, Person } from '../types';
 
 export const NODE_W = 180;
@@ -71,6 +72,8 @@ export interface UnionNodeData extends Record<string, unknown> {
   mode: LayoutMode;
   /** grosor de la "rama" vertical de la pareja */
   w: number;
+  /** dibujar como rama (se afina y se ensancha en el nudo de la pareja) */
+  organic?: boolean;
   hl?: boolean;
   dim?: boolean;
 }
@@ -78,10 +81,11 @@ export interface DecorNodeData extends Record<string, unknown> {
   kind: 'trunk' | 'rings';
   w: number;
   h: number;
-  /** trunk: puntos donde el tronco se abre en ramas (relativos al nodo) */
-  anchors?: { x: number; y: number; w: number }[];
-  /** trunk: posición del tronco (relativa al nodo) */
-  trunk?: { x: number; forkY: number; baseY: number };
+  /** trunk: tronco y ramas (relativos al nodo) */
+  crown?: Crown;
+  /** trunk: centros del follaje (uno por tarjeta) y su radio */
+  leaves?: { x: number; y: number }[];
+  leafR?: number;
   /** rings: radios de cada generación */
   radii?: number[];
 }
@@ -151,7 +155,8 @@ export function buildFlow(a: BuildArgs) {
   const organic = mode !== 'generations' || edgeStyle === 'branch';
   const maxGen = Math.max(1, ...gen.values());
   // Ramas más gruesas cerca del tronco (generaciones antiguas), más finas en la copa
-  const wOf = (id: string) => (organic ? 3 + 9 * (1 - (gen.get(id) ?? 0) / maxGen) : 2);
+  // Baja en pasos iguales por generación y con piso de 6 px: las ramas de la copa siguen viéndose como ramas, no como hilos
+  const wOf = (id: string) => (organic ? 6 + 11 * (1 - (gen.get(id) ?? 0) / maxGen) : 2);
   const name = (id: string) => persons[id]?.firstName ?? '';
 
   const nodes: FlowNode[] = Object.values(persons).map((p) => ({
@@ -188,12 +193,12 @@ export function buildFlow(a: BuildArgs) {
       const [pa, pb] = f.parents;
       const uid = `${f.id}:${mode}`; // id distinto por modo: las asas de la unión cambian de lado
       const unionOn = f.children.some((c) => path.has(c.id)) && (path.has(pa) || path.has(pb));
-      const uw = organic ? Math.max(wOf(pa), wOf(pb)) * 0.8 : 2;
+      const uw = organic ? Math.max(wOf(pa), wOf(pb)) * 0.9 : 2;
       nodes.push({
         id: uid,
         type: 'union' as const,
         position: { x: 0, y: 0 },
-        data: { parents: f.parents, mode, w: uw, hl: hasPath && unionOn, dim: focus && hasPath && !unionOn },
+        data: { parents: f.parents, mode, w: uw, organic, hl: hasPath && unionOn, dim: focus && hasPath && !unionOn },
         draggable: false,
         selectable: false,
         connectable: false,
@@ -217,8 +222,9 @@ export function buildFlow(a: BuildArgs) {
           style: ended && !organic ? { strokeDasharray: '7 6' } : undefined,
           data: {
             shape: 'straight',
-            w1: Math.max(2.5, uw * 0.6),
-            w2: Math.max(2.5, uw * 0.6),
+            // Ramita que se afina hacia cada pareja: con la unión forman una "Y", no una "⊥"
+            w1: organic ? Math.max(2.5, uw * 0.4) : 2.5,
+            w2: organic ? Math.max(2.5, uw * 0.9) : 2.5,
             dashed: !!ended,
             floating: mode === 'radial',
             partnershipId: f.partnership?.id,
@@ -243,7 +249,7 @@ export function buildFlow(a: BuildArgs) {
           data: {
             shape,
             w1: uw,
-            w2: wOf(c.id) * 0.75,
+            w2: wOf(c.id) * 0.9,
             dashed: c.kind !== 'biological',
             floating: mode === 'radial',
             pc: [{ parentId: pa, childId: c.id }, { parentId: pb, childId: c.id }],
@@ -269,8 +275,8 @@ export function buildFlow(a: BuildArgs) {
           markerEnd: arrow(on),
           data: {
             shape,
-            w1: wOf(p) * 0.8,
-            w2: wOf(c.id) * 0.75,
+            w1: wOf(p) * 0.9,
+            w2: wOf(c.id) * 0.9,
             dashed: c.kind !== 'biological',
             floating: mode === 'radial',
             pc: [{ parentId: p, childId: c.id }],
@@ -296,21 +302,35 @@ export function buildFlow(a: BuildArgs) {
         const x = cs.reduce((s, c) => s + c.x, 0) / cs.length;
         // Pareja: la rama llega a la línea que los une; persona sola: al borde inferior de su tarjeta
         const y = f.parents.length === 2 ? cs.reduce((s, c) => s + c.y, 0) / cs.length : cs[0].y + NODE_H / 2 - 4;
-        return { x, y, w: wOf(f.parents[0]) };
+        // Borde inferior de las tarjetas: la rama sube recta desde ahí para no cruzar por encima de ellas
+        const bottom = Math.max(...cs.map((c) => c.y)) + NODE_H / 2 + 6;
+        return { x, y, w: wOf(f.parents[0]), bottom };
       });
     if (!anchors.length) {
       const first = Object.keys(persons)[0];
       const c = centerOf(first);
-      anchors.push({ x: c.x, y: c.y + NODE_H / 2 - 4, w: 10 });
+      anchors.push({ x: c.x, y: c.y + NODE_H / 2 - 4, w: 10, bottom: c.y + NODE_H / 2 + 6 });
     }
-    // El tronco nace debajo de la tarjeta más baja y se reparte en ramas hacia cada raíz
-    const lowest = Math.max(...Object.keys(persons).map((id) => centerOf(id).y)) + NODE_H / 2;
-    const forkY = lowest + 110;
-    const baseY = lowest + 360;
-    const trunkX = anchors.reduce((s, a) => s + a.x, 0) / anchors.length;
-    const minX = Math.min(trunkX, ...anchors.map((p) => p.x)) - 260;
-    const maxX = Math.max(trunkX, ...anchors.map((p) => p.x)) + 260;
-    const top = Math.min(...anchors.map((p) => p.y)) - 10;
+    // Ramaje que se bifurca por niveles debajo de la tarjeta más baja (ver crown.ts)
+    const centers = Object.keys(persons).map(centerOf);
+    const lowest = Math.max(...centers.map((c) => c.y)) + NODE_H / 2;
+    const highest = Math.min(...centers.map((c) => c.y)) - NODE_H / 2;
+    const cardsH = lowest - highest;
+    const spanA = Math.max(...anchors.map((a) => a.x)) - Math.min(...anchors.map((a) => a.x));
+    // Proporción de árbol: las tarjetas son la copa; ramaje y tronco, una fracción de su alto
+    const crown = growCrown(anchors, {
+      floor: lowest + 60,
+      depth: Math.min(1100, Math.max(180, cardsH * 0.45, spanA * 0.28)),
+      trunk: Math.min(600, Math.max(220, cardsH * 0.3, spanA * 0.14)),
+    });
+    // Follaje: un círculo detrás de cada tarjeta; juntos forman la silueta de la copa
+    const R = NODE_H * 1.3;
+    const xs = [crown.trunk.x, ...centers.map((c) => c.x)];
+    const minX = Math.min(...xs) - Math.max(260, R + 20);
+    const maxX = Math.max(...xs) + Math.max(260, R + 20);
+    const top = highest - R + NODE_H / 2 - 10;
+    const rel = (p: { x: number; y: number }) => ({ x: p.x - minX, y: p.y - top });
+    const h = crown.trunk.baseY - top + 20;
     nodes.push({
       id: 'decor:trunk',
       type: 'decor' as const,
@@ -318,15 +338,19 @@ export function buildFlow(a: BuildArgs) {
       data: {
         kind: 'trunk',
         w: maxX - minX,
-        h: baseY - top + 20,
-        anchors: anchors.map((p) => ({ x: p.x - minX, y: p.y - top, w: p.w })),
-        trunk: { x: trunkX - minX, forkY: forkY - top, baseY: baseY - top },
+        h,
+        crown: {
+          trunk: { ...crown.trunk, x: crown.trunk.x - minX, forkY: crown.trunk.forkY - top, baseY: crown.trunk.baseY - top },
+          limbs: crown.limbs.map((l) => ({ ...l, from: rel(l.from), to: rel(l.to), tip: l.tip && rel(l.tip) })),
+        },
+        leaves: centers.map(rel),
+        leafR: R,
       },
       draggable: false,
       selectable: false,
       connectable: false,
       width: maxX - minX,
-      height: baseY - top + 20,
+      height: h,
       zIndex: -2,
     });
   }

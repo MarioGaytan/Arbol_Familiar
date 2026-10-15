@@ -14,12 +14,13 @@ import {
   type OnConnectEnd,
 } from '@xyflow/react';
 import { Map as MapIcon, Unlink, X } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useEditor } from '../store';
 import { buildIndex, computeRelations, findPath } from '../lib/kinship';
 import { buildFlow, computeFamilies, NODE_H, NODE_W, placeUnions, type FlowNode, type LinkEdge } from '../lib/graph';
 import { computeGenerations } from '../lib/layout';
 import { resolveTheme, themeVars } from '../lib/themes';
-import { nodeTypes } from './nodes';
+import { nodeTypes, useFar } from './nodes';
 import { edgeTypes } from './edges';
 
 const PATTERN = {
@@ -38,8 +39,36 @@ export function useDerived() {
   return { idx, relations, rootId };
 }
 
+/** A partir de este tamaño sólo se dibuja lo que está en pantalla (ahorra memoria y CPU). */
+const CULL_FROM = 60;
+
 export function FamilyCanvas() {
-  const s = useEditor();
+  // Sólo lo que el lienzo usa: así no se vuelve a dibujar al escribir en la ficha, abrir paneles, etc.
+  const s = useEditor(
+    useShallow((st) => ({
+      persons: st.persons,
+      parentChild: st.parentChild,
+      partnerships: st.partnerships,
+      tree: st.tree,
+      selectedId: st.selectedId,
+      selectedEdge: st.selectedEdge,
+      exporting: st.exporting,
+      focusMode: st.focusMode,
+      fitRequest: st.fitRequest,
+      centerRequest: st.centerRequest,
+      readOnly: st.readOnly,
+      snap: st.snap,
+      showMinimap: st.showMinimap,
+      savePositions: st.savePositions,
+      linkParent: st.linkParent,
+      addPartnership: st.addPartnership,
+      createRelative: st.createRelative,
+      deleteLinks: st.deleteLinks,
+      select: st.select,
+      set: st.set,
+    })),
+  );
+  const far = useFar() && !s.exporting;
   const rf = useReactFlow();
   const { idx, relations, rootId } = useDerived();
   const theme = resolveTheme(s.tree?.theme);
@@ -179,7 +208,7 @@ export function FamilyCanvas() {
       const x = Math.min(...xs);
       const y = Math.min(...ys);
       // En modo árbol se incluye el tronco que asoma debajo de la generación más antigua
-      const extra = useEditor.getState().tree?.theme.layoutMode === 'tree' ? 300 : 20;
+      const extra = useEditor.getState().tree?.theme.layoutMode === 'tree' ? 420 : 20;
       rf.fitBounds(
         { x, y, width: Math.max(...xs) - x + NODE_W, height: Math.max(...ys) - y + NODE_H + extra },
         { padding: 0.12, duration: 500 },
@@ -279,7 +308,7 @@ export function FamilyCanvas() {
   }, []);
 
   return (
-    <div className={`canvas-wrap mode-${mode} ${s.exporting ? 'exporting' : ''}`} style={{ ...themeVars(theme), background: theme.bg }}>
+    <div className={`canvas-wrap mode-${mode} ${s.exporting ? 'exporting' : ''} ${far ? 'lod-far' : ''}`} style={{ ...themeVars(theme), background: theme.bg }}>
       <ReactFlow<FlowNode, LinkEdge>
         nodes={nodes}
         edges={edges}
@@ -306,10 +335,11 @@ export function FamilyCanvas() {
         maxZoom={3}
         snapToGrid={s.snap}
         snapGrid={[20, 20]}
-        proOptions={{ hideAttribution: true }}
+        attributionPosition="bottom-center"
         nodeDragThreshold={3}
         selectionKeyCode="Shift"
         multiSelectionKeyCode={['Control', 'Meta']}
+        onlyRenderVisibleElements={!s.exporting && nodes.length > CULL_FROM}
       >
         {theme.pattern !== 'none' && (
           <Background variant={PATTERN[theme.pattern]} color={theme.patternColor} gap={theme.pattern === 'dots' ? 22 : 44} size={theme.pattern === 'dots' ? 1.6 : 1} />

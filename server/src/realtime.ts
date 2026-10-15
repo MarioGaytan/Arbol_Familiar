@@ -31,7 +31,11 @@ function broadcastPresence(treeId: string) {
   for (const c of here) send(c, 'presence', users);
 }
 
+let closing = false;
+let listener: pg.Client | null = null;
+
 async function listen(app: FastifyInstance) {
+  if (closing) return;
   const client = new pg.Client({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
@@ -39,7 +43,7 @@ async function listen(app: FastifyInstance) {
   const retry = () => {
     client.removeAllListeners();
     client.end().catch(() => undefined);
-    setTimeout(() => listen(app).catch(() => undefined), 3000);
+    if (!closing) setTimeout(() => listen(app).catch(() => undefined), 3000);
   };
   client.on('error', (e) => {
     app.log.warn(e, 'tiempo real: conexión LISTEN perdida, reintentando');
@@ -50,12 +54,19 @@ async function listen(app: FastifyInstance) {
     const ev = JSON.parse(msg.payload) as { treeId: string; clientId?: string; by: string; at: string };
     for (const c of conns) if (c.treeId === ev.treeId && c.clientId !== ev.clientId) send(c, 'change', ev);
   });
+  listener = client;
   await client.connect();
   await client.query(`LISTEN ${CHANNEL}`);
 }
 
 export async function registerRealtime(app: FastifyInstance) {
+  closing = false;
   await listen(app);
+  // Al cerrar la app (apagado o fin de las pruebas) soltar la conexión LISTEN sin reintentar
+  app.addHook('onClose', async () => {
+    closing = true;
+    await listener?.end().catch(() => undefined);
+  });
 
   // Tras cada cambio exitoso en un árbol, avisar a los demás
   app.addHook('onResponse', async (req, reply) => {

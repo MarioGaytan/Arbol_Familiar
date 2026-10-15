@@ -20,6 +20,16 @@ export const verticalCurve = (s: Pt, t: Pt) => {
   return cubic(s, { x: s.x, y: my }, { x: t.x, y: my }, t);
 };
 
+/**
+ * Curva de rama: sale inclinada hacia su destino (como brota una rama del tallo) y llega derecha.
+ * Con muchos hermanos evita el "peine" de curvas en S que salen todas verticales y se enciman.
+ */
+export const growCurve = (s: Pt, t: Pt) => {
+  const dx = t.x - s.x;
+  const dy = t.y - s.y;
+  return cubic(s, { x: s.x + dx * 0.45, y: s.y + dy * 0.22 }, { x: t.x, y: t.y - dy * 0.5 }, t);
+};
+
 /** Curva que sale en dirección radial desde el centro (0,0) y llega radialmente al destino. */
 export const radialCurve = (s: Pt, t: Pt) => {
   const rs = Math.hypot(s.x, s.y);
